@@ -84,6 +84,16 @@ public class KineticTriangle {
 		}
 		throw new IllegalArgumentException("Neighbor " + n + " not found for triangle " + this);
 	}
+	
+    /** Finds the index (0, 1, or 2) of the given wavefront edge. */
+    public int indexOfWavefront(WavefrontEdge edge) {
+        for (int i = 0; i < 3; i++) {
+            if (wavefronts[i] == edge) { // Use object identity
+                return i;
+            }
+        }
+        return -1; // Not found
+    }
 
 	@Override
 	public String toString() {

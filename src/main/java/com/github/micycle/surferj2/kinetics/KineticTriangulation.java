@@ -100,70 +100,55 @@ public class KineticTriangulation {
 		}
 
 		// Second Pass: Link Neighbors and Create/Link WavefrontEdges
-		for (Map.Entry<QuadEdgeTriangle, KineticTriangle> entry : qetToKt.entrySet()) {
-			QuadEdgeTriangle jtsTriangle = entry.getKey();
-			KineticTriangle currentKt = entry.getValue();
+		// --- Pass 2: Link Neighbors and Create/Identify WavefrontEdges ---
+        for (Map.Entry<QuadEdgeTriangle, KineticTriangle> entry : qetToKt.entrySet()) {
+            QuadEdgeTriangle jtsTriangle = entry.getKey();
+            KineticTriangle currentKt = entry.getValue();
 
-			for (int i = 0; i < 3; i++) {
-				Coordinate p0 = jtsTriangle.getCoordinate(i);
-				Coordinate p1 = jtsTriangle.getCoordinate((i + 1) % 3);
-				CanonicalSegment edgeSegment = new CanonicalSegment(p0, p1);
+            for (int i = 0; i < 3; i++) {
+                Coordinate p0 = jtsTriangle.getCoordinate(i);
+                Coordinate p1 = jtsTriangle.getCoordinate((i + 1) % 3);
+                 if (p0 == null || p1 == null || p0.equals2D(p1)) continue; // Skip null or degenerate edges
 
-				boolean isConstraint = constraintSegments.contains(edgeSegment);
+                CanonicalSegment edgeSegment = new CanonicalSegment(p0, p1);
+                int edgeIndexInTriangle = (i + 2) % 3; // Edge i is opposite vertex (i+2)%3
 
-				if (isConstraint) {
-					// Find or create the WavefrontEdge
-					WavefrontEdge wfEdge = edgeMap.computeIfAbsent(edgeSegment, k -> {
-						// TODO: Get weight from input if available, default 1.0
-						WavefrontEdge newWfEdge = new WavefrontEdge(k, 1.0);
-						this.wavefrontEdges.add(newWfEdge);
-						return newWfEdge;
-					});
-					currentKt.setWavefront((i + 2) % 3, wfEdge); // Edge i is opposite vertex (i+2)%3
-				} else {
-					// Find neighbor triangle
-					QuadEdgeTriangle neighborQet = findNeighbor(jtsTriangle, i, jtsTriangles);
-					if (neighborQet != null) {
-						KineticTriangle neighborKt = qetToKt.get(neighborQet);
-						if (neighborKt != null) { // Check if neighbor is inside polygon
-							currentKt.setNeighbor((i + 2) % 3, neighborKt);
-						} else {
-							// Neighbor exists in triangulation but is outside polygon area
-							// Treat this edge like a constraint from the perspective of currentKt
-							// This can happen along hole boundaries or the outer boundary
-							// Ensure this segment IS actually a constraint segment in these cases
-							if (!constraintSegments.contains(edgeSegment)) {
-								// This case might indicate an issue or a very specific geometry
-								// For simplicity now, we might ignore it or treat as constraint
-								System.err.println("Warning: Internal edge " + edgeSegment + " borders an external triangle for " + currentKt);
-								// Optionally create a WF edge here if needed by algorithm logic
-							} else {
-								// It's a constraint segment bordering outside, set WF edge
-								WavefrontEdge wfEdge = edgeMap.computeIfAbsent(edgeSegment, k -> {
-									WavefrontEdge newWfEdge = new WavefrontEdge(k, 1.0);
-									this.wavefrontEdges.add(newWfEdge);
-									return newWfEdge;
-								});
-								currentKt.setWavefront((i + 2) % 3, wfEdge);
-							}
-						}
-					} else {
-						// No neighbor found via QuadEdgeTriangle logic, potentially boundary
-						if (!constraintSegments.contains(edgeSegment)) {
-							System.err.println("Warning: Non-constraint edge " + edgeSegment + " has no neighbor for " + currentKt);
-						} else {
-							// Should have been caught by isConstraint check, but safety check
-							WavefrontEdge wfEdge = edgeMap.computeIfAbsent(edgeSegment, k -> {
-								WavefrontEdge newWfEdge = new WavefrontEdge(k, 1.0);
-								this.wavefrontEdges.add(newWfEdge);
-								return newWfEdge;
-							});
-							currentKt.setWavefront((i + 2) % 3, wfEdge);
-						}
-					}
-				}
-			}
-		}
+                boolean isConstraint = constraintSegments.contains(edgeSegment);
+                QuadEdgeTriangle neighborQet = findNeighbor(jtsTriangle, i, jtsTriangles);
+                KineticTriangle neighborKt = (neighborQet != null) ? qetToKt.get(neighborQet) : null;
+
+                if (isConstraint) {
+                    // This edge is on the input boundary. Create/get the WavefrontEdge.
+                    WavefrontEdge wfEdge = createOrGetWavefrontEdge(edgeSegment);
+                    currentKt.setWavefront(edgeIndexInTriangle, wfEdge);
+                    // Check if neighbor also exists and borders this constraint
+                    if (neighborKt != null) {
+                        // This might happen if the constraint is very thin or has collinear points
+                        // The neighbor should also see this as a constraint
+                        System.err.println("Warning: Constraint edge " + edgeSegment + " has an internal neighbor triangle " + neighborKt.id);
+                    }
+                } else {
+                    // This edge is internal to the polygon's triangulation area.
+                    if (neighborKt != null) {
+                        // Link neighbors
+                        currentKt.setNeighbor(edgeIndexInTriangle, neighborKt);
+                    } else {
+                        // Internal edge with no valid neighbor inside the polygon area.
+                        // This means the edge must lie on the boundary (e.g., hole boundary
+                        // that wasn't explicitly marked as constraint or outer boundary near convex hull).
+                        // Treat it as a constraint.
+                         if (!constraintSegments.contains(edgeSegment)) {
+                            System.err.println("Warning: Internal edge " + edgeSegment + " borders outside, treating as constraint for triangle " + currentKt.id);
+                            // Add to constraints if this happens, maybe triangulation issue?
+                            // constraintSegments.add(edgeSegment); // Use cautiously
+                        }
+                        WavefrontEdge wfEdge = createOrGetWavefrontEdge(edgeSegment);
+                        currentKt.setWavefront(edgeIndexInTriangle, wfEdge);
+                    }
+                }
+            }
+        }
+
 
 		// Third Pass: Link WavefrontEdges to their WavefrontVertices
 		for (WavefrontEdge wfEdge : this.wavefrontEdges) {
@@ -238,6 +223,147 @@ public class KineticTriangulation {
 		// }
 
 	}
+	
+    /** Helper to create or retrieve a WavefrontEdge, ensuring uniqueness. */
+    private WavefrontEdge createOrGetWavefrontEdge(CanonicalSegment segment) {
+        return edgeMap.computeIfAbsent(segment, k -> {
+            // TODO: Get weight from actual input source if available
+            double weight = 1.0;
+            // Use the constructor that creates the WavefrontSupportingLine
+            WavefrontEdge newEdge = new WavefrontEdge(k.getSegment(), weight);
+            this.wavefrontEdges.add(newEdge);
+            return newEdge;
+        });
+    }
+    
+    /** Final linking step after all triangles/edges are processed. */
+    private void linkWavefrontEdgesAndVertices() {
+        for (WavefrontEdge wfEdge : this.wavefrontEdges) {
+            LineSegment seg = wfEdge.getSegment();
+            Coordinate c0 = seg.p0; // Use original segment coords for lookup
+            Coordinate c1 = seg.p1;
+            WavefrontVertex mapV0 = vertexMap.get(new CanonicalSegment(c0,c0).getP0()); // Lookup canonical coord
+            WavefrontVertex mapV1 = vertexMap.get(new CanonicalSegment(c1,c1).getP0()); // Lookup canonical coord
+
+
+            if (mapV0 == null || mapV1 == null) {
+                 throw new IllegalStateException("Vertex not found in vertexMap for WavefrontEdge segment: " + seg + " c0Key:" + new CanonicalSegment(c0,c0).getP0() + " c1Key:" + new CanonicalSegment(c1,c1).getP0());
+            }
+
+            // Determine orientation relative to the incident triangle(s)
+            KineticTriangle tri = wfEdge.getIncidentTriangle(); // Get the one set during Pass 2
+
+             // If triangle is null, try finding the other side (less common)
+            if (tri == null) {
+                tri = findOtherTriangleWithWavefrontEdge(wfEdge);
+                if (tri != null) {
+                    wfEdge.setIncidentTriangle(tri); // Set if found
+                } else {
+                    System.err.println("Warning: Could not find any incident triangle for edge " + wfEdge.id + " seg=" + seg);
+                    continue; // Skip linking if no triangle found
+                }
+            }
+
+
+            int edgeIndexInTri = tri.indexOfWavefront(wfEdge);
+            if (edgeIndexInTri == -1) {
+                 // This might happen if findOtherTriangleWithWavefrontEdge was called and set the wrong tri?
+                 // Or if the initial setIncidentTriangle failed.
+                 System.err.println("Error: WavefrontEdge " + wfEdge.id + " not found in its supposedly incident triangle " + tri.id);
+                 // Attempt to find the correct triangle again?
+                 boolean found = false;
+                 for (KineticTriangle ktCheck : triangles) {
+                     for (int i=0; i<3; ++i) {
+                         if (ktCheck.getWavefront(i) == wfEdge) {
+                             tri = ktCheck;
+                             edgeIndexInTri = i;
+                             wfEdge.setIncidentTriangle(tri);
+                             found = true;
+                             System.err.println("Found edge in triangle " + tri.id + " edge index " + i);
+                             break;
+                         }
+                     }
+                     if (found) break;
+                 }
+                 if (!found) {
+                      System.err.println("FATAL: Could not resolve incident triangle for edge " + wfEdge.id);
+                      continue; // Skip this edge if unresolvable
+                 }
+            }
+
+
+            // Edge edgeIndexInTri is opposite vertex edgeIndexInTri
+            // Vertices forming this edge in the triangle are (edgeIndexInTri+1)%3 and (edgeIndexInTri+2)%3
+            // These indices give us the *expected* WavefrontVertex objects from the triangle's perspective
+            WavefrontVertex triV_CCW = tri.getVertex((edgeIndexInTri + 1) % 3); // This vertex is CCW of edge
+            WavefrontVertex triV_CW = tri.getVertex((edgeIndexInTri + 2) % 3);  // This vertex is CW of edge
+
+            // Assign vertices to edge in the order (CCW_Vertex, CW_Vertex) which corresponds to (vertex0, vertex1)
+            // This matches the C++ convention where edge->vertex(0) is the "left" vertex seen from the triangle.
+             if ((mapV0 == triV_CCW && mapV1 == triV_CW)) {
+                 wfEdge.setVertices(mapV0, mapV1);
+             } else if ((mapV1 == triV_CCW && mapV0 == triV_CW)) {
+                 wfEdge.setVertices(mapV1, mapV0); // Assign in (CCW, CW) order
+             } else {
+                 // This can happen if the vertexMap lookup failed or triangle vertices are wrong
+                  System.err.println("TRIANGLE: " + tri);
+                  System.err.println("EDGE: " + wfEdge);
+                  System.err.println("EDGE SEG: " + seg);
+                  System.err.println("MAP V0: " + mapV0 + " (" + mapV0.initialPosition + ")");
+                  System.err.println("MAP V1: " + mapV1 + " (" + mapV1.initialPosition + ")");
+                  System.err.println("TRI V_CCW (idx " + ((edgeIndexInTri + 1) % 3) + "): " + triV_CCW + " (" + (triV_CCW != null ? triV_CCW.initialPosition : "null") + ")");
+                  System.err.println("TRI V_CW  (idx " + ((edgeIndexInTri + 2) % 3) + "): " + triV_CW + " (" + (triV_CW != null ? triV_CW.initialPosition : "null") + ")");
+
+                 throw new IllegalStateException("Vertex mismatch linking edge " + wfEdge.id + " to triangle " + tri.id);
+             }
+
+
+            // Link vertices back to this edge
+            // Vertex 0 (CCW) should have this as its edge1 (CW edge *relative to the vertex*)
+            // Vertex 1 (CW) should have this as its edge0 (CCW edge *relative to the vertex*)
+             WavefrontVertex v0 = wfEdge.getVertex(0);
+             WavefrontVertex v1 = wfEdge.getVertex(1);
+
+             if (v0 != null && !v0.isInfinite) {
+                 if (v0.getIncidentEdge(1) != null && v0.getIncidentEdge(1) != wfEdge) {
+                    System.err.println("Warning: Overwriting incident edge 1 for vertex " + v0.id + ". Old: " + v0.getIncidentEdge(1).id + " New: " + wfEdge.id);
+                 }
+                 v0.setIncidentEdge(1, wfEdge);
+             }
+             if (v1 != null && !v1.isInfinite) {
+                  if (v1.getIncidentEdge(0) != null && v1.getIncidentEdge(0) != wfEdge) {
+                     System.err.println("Warning: Overwriting incident edge 0 for vertex " + v1.id + ". Old: " + v1.getIncidentEdge(0).id + " New: " + wfEdge.id);
+                 }
+                 v1.setIncidentEdge(0, wfEdge);
+             }
+        }
+
+         // Final check: Ensure all non-infinite vertices have both incident edges set
+        for (WavefrontVertex v : this.vertices) {
+            if (!v.isInfinite) {
+                if (v.getIncidentEdge(0) == null) {
+                     System.err.println("Warning: Vertex " + v.id + " (" + v.initialPosition + ") missing incident edge 0 (CCW) after linking.");
+                }
+                 if (v.getIncidentEdge(1) == null) {
+                     System.err.println("Warning: Vertex " + v.id + " (" + v.initialPosition + ") missing incident edge 1 (CW) after linking.");
+                }
+            }
+        }
+    }
+    
+    // Helper needed for linking pass 3
+    private KineticTriangle findOtherTriangleWithWavefrontEdge(WavefrontEdge edge) {
+       KineticTriangle first = edge.getIncidentTriangle();
+       for (KineticTriangle kt : triangles) {
+           if (kt == first) continue; // Skip the one we already know
+           for (int i = 0; i < 3; i++) {
+               if (kt.getWavefront(i) == edge) {
+                   return kt;
+               }
+           }
+       }
+       return null; // Only one triangle borders this edge (or none were found)
+   }
 
 	private KineticTriangle findTriangleWithWavefrontEdge(WavefrontEdge edge) {
 		for (KineticTriangle kt : triangles) {
