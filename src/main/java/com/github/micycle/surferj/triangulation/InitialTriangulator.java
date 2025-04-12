@@ -3,18 +3,16 @@ package com.github.micycle.surferj.triangulation;
 import org.locationtech.jts.geom.Polygon;
 import org.tinfour.common.IIncrementalTin;
 import org.tinfour.common.IQuadEdge;
-import org.tinfour.common.Vertex;
-
 import com.github.micycle.surferj.util.Constants;
 import com.github.micycle.surferj.util.TinFourUtil;
 
 import org.tinfour.common.SimpleTriangle;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.StreamSupport;
 
 /**
  * Triangulate a JTS polygon using TinFour.
@@ -33,8 +31,7 @@ public class InitialTriangulator {
 
 	public void triangulate() {
 		this.tin = TinFourUtil.triangulatePolygon(inputPolygon);
-//		tin.triangles().spliterator()
-		this.triangles = tin.getTriangles();
+		this.triangles = StreamSupport.stream(tin.triangles().spliterator(), false).toList();
 		storeConstraintWeights();
 	}
 
@@ -43,10 +40,10 @@ public class InitialTriangulator {
 		// A real implementation would need to map TIN constraint edges
 		// back to the original Polygon segments and store their associated weights.
 		for (IQuadEdge edge : tin.getEdges()) {
-			if (edge.isConstraint()) {
+			if (edge.isConstraintLineMember()) {
 				constraintWeights.put(edge, Constants.DEFAULT_WEIGHT);
 				// Also store for the twin, TinFour edges might not be consistently oriented
-				constraintWeights.put(edge.getTwin(), Constants.DEFAULT_WEIGHT);
+				constraintWeights.put(edge.getDual(), Constants.DEFAULT_WEIGHT);
 			}
 		}
 	}
@@ -70,9 +67,10 @@ public class InitialTriangulator {
 
 	// Helper to get the Tinfour edge corresponding to two kinetic vertices
 	// (Requires KineticVertex to store its original Tinfour Vertex)
-	public IQuadEdge findTinEdge(Vertex v1, Vertex v2) {
-		if (tin == null || v1 == null || v2 == null)
-			return null;
-		return tin.getEdge(v1, v2);
-	}
+//	public IQuadEdge findTinEdge(Vertex v1, Vertex v2) {
+//		if (tin == null || v1 == null || v2 == null) {
+//			return null;
+//		}
+//		return tin.getEdge(v1, v2);
+//	}
 }

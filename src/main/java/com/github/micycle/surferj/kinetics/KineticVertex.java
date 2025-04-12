@@ -30,6 +30,10 @@ public class KineticVertex {
     // In a full DCEL, these would be half-edges
     private KineticVertex nextVertex = null;
     private KineticVertex prevVertex = null;
+    
+    public KineticVertex(Vertex zero, Vector2D velocity, double timeStart) {
+    	this(new Coordinate(zero.x, zero.y), velocity, timeStart, zero);
+    }
 
 
     public KineticVertex(Coordinate posZero, Vector2D velocity, double timeStart, Vertex originalTinVertex) {

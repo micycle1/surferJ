@@ -40,24 +40,58 @@ public class CollapseEvent implements Comparable<CollapseEvent> {
      public void setEdgeIndex(int index) { this.edgeIndex = index; } // If needed post-creation
 
 
-    @Override
-    public int compareTo(CollapseEvent other) {
-        // Primary sort: time
-        int timeCompare = Double.compare(this.time, other.time);
-        if (timeCompare != 0) {
-            return timeCompare;
-        }
+     @Override
+     public int compareTo(CollapseEvent other) {
+         // 0. Component ID (if implemented)
+         // int componentCompare = Integer.compare(this.componentId, other.componentId);
+         // if (componentCompare != 0) return componentCompare;
 
-        // Secondary sort: event type priority (lower enum ordinal = higher priority)
-        // Example: Edge collapse happens "before" triangle collapse if times are equal
-        int typeCompare = this.type.ordinal() - other.type.ordinal();
-        if (typeCompare != 0) {
-            return typeCompare;
-        }
+         // 1. Time
+         int timeCompare = Double.compare(this.time, other.time);
+         if (timeCompare != 0) {
+             return timeCompare;
+         }
 
-        // Tertiary sort: triangle ID (for deterministic tie-breaking)
-        return Integer.compare(this.triangle.id, other.triangle.id);
-    }
+         // 2. Event Type Priority (Lower ordinal = HIGHER priority)
+         int priorityThis = getEventTypePriority(this.type);
+         int priorityOther = getEventTypePriority(other.type);
+         int typePriorityCompare = Integer.compare(priorityThis, priorityOther);
+         if (typePriorityCompare != 0) {
+             return typePriorityCompare;
+         }
+
+         // 3. Flip Event Tie-breaking (if both are flips)
+         if (this.type == EventType.FLIP_EVENT && other.type == EventType.FLIP_EVENT) {
+              // Requires storing the length^2 of the edge being flipped (the spoke)
+              // Higher length = HIGHER priority (so compare other.flipEdgeLengthSq to this.flipEdgeLengthSq)
+        	 
+        	 // NOTE UNCOMMENT BELOW!
+//              int flipCompare = Double.compare(other.getFlipEdgeLengthSquared(), this.getFlipEdgeLengthSquared()); // Needs modification to CollapseEvent
+//              if (flipCompare != 0) {
+//                  return flipCompare;
+//              }
+         }
+
+         // 4. Triangle ID (Final deterministic tie-breaking)
+         return Integer.compare(this.triangle.id, other.triangle.id);
+     }
+
+     // Helper method for type priority (Lower value = higher priority)
+     private int getEventTypePriority(EventType type) {
+         switch (type) {
+             // Highest priority - Infinite speed cases (add these enums if needed)
+             // case INFINITE_SPEED_OPPOSING: return 0;
+             // case INFINITE_SPEED_WEIGHTED: return 1;
+             case EDGE_COLLAPSE:       return 10; // Real event
+             case TRIANGLE_COLLAPSE:   return 11; // Real event (includes spoke collapse for now)
+             // case SPOKE_COLLAPSE:   return 12; // Real event
+             // case SPLIT_EVENT:      return 13; // Real event
+             case FLIP_EVENT:          return 20; // Internal event
+             // case CCW_VERTEX_LEAVES_CH: return 21; // Internal/Boundary event
+             case NONE:                return 99; // Lowest priority
+             default:                  return 50; // Other/Unknown
+         }
+     }
 
     @Override
     public boolean equals(Object o) {
