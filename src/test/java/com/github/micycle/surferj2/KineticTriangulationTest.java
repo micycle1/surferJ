@@ -291,8 +291,8 @@ public class KineticTriangulationTest {
 					// Check shared vertices
 					WavefrontVertex v1 = tri.getVertex((i + 1) % 3);
 					WavefrontVertex v2 = tri.getVertex((i + 2) % 3);
-					assertTrue(neighbor.indexOf(v1) >= 0, "Neighbor missing shared vertex");
-					assertTrue(neighbor.indexOf(v2) >= 0, "Neighbor missing shared vertex");
+					assertTrue(neighbor.indexOfVertex(v1) >= 0, "Neighbor missing shared vertex");
+					assertTrue(neighbor.indexOfVertex(v2) >= 0, "Neighbor missing shared vertex");
 				}
 
 				if (wavefront != null) {

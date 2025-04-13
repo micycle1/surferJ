@@ -47,44 +47,41 @@ public class WavefrontSupportingLine {
 
 	private final LineSegment segment; // Initial segment at t=0
 	private final double weight;
-	// Calculated properties
-	private final Vector2D directionVector; // Vector along the segment
-	private final Vector2D unitNormal; // Unit normal vector (consistent side, e.g., "left" relative to direction)
-	private final Vector2D weightedNormal; // unitNormal * weight
-	
+	private final Vector2D normalDirection; /* arbitrary length, perpendicular to line direction */
+	private final Vector2D normalUnit; /* unit length */
+	private final Vector2D normal; /* weighted (normalUnit * weight) */
+
 	public WavefrontSupportingLine(double p1x, double p1y, double p2x, double p2y) {
 		this(new LineSegment(p1x, p1y, p2x, p2y), 1);
 	}
 
 	public WavefrontSupportingLine(LineSegment segment, double weight) {
-		this.segment = segment; // Store the original segment
+		this.segment = segment;
 		this.weight = weight;
 
-		// Calculate direction (ensure consistent orientation if needed, e.g., p0 to p1)
-		this.directionVector = new Vector2D(segment.p0, segment.p1);
-		if (this.directionVector.length() < 1e-12) {
+		// Compute direction vector of the line (from p0 to p1)
+		Vector2D directionVector = new Vector2D(segment.p0, segment.p1);
+		if (directionVector.length() < 1e-12) {
 			throw new IllegalArgumentException("Cannot create supporting line for zero-length segment: " + segment);
 		}
 
-		// Calculate unit normal (e.g., rotate direction vector -90 degrees for "left"
-		// normal)
-		// JTS doesn't have a direct Vector2D normal, calculate manually:
-		// Normal to (dx, dy) is (-dy, dx) or (dy, -dx)
+		// Calculate normal direction (rotate direction vector 90 degrees
+		// counterclockwise)
 		double dx = directionVector.getX();
 		double dy = directionVector.getY();
-		Vector2D normal = new Vector2D(-dy, dx); // Left-hand normal relative to segment direction p0->p1
-		this.unitNormal = normal.normalize(); // Make it unit length
+		this.normalDirection = new Vector2D(-dy, dx);
+
+		// Calculate unit normal
+		this.normalUnit = this.normalDirection.normalize();
 
 		// Calculate weighted normal
-		this.weightedNormal = this.unitNormal.multiply(this.weight);
-		
-	}
-	
-	public Coordinate lineIntersection(WavefrontSupportingLine o) {
-		return this.segment.lineIntersection(o.segment); // robust -- CGAlgorithmsDD
+		this.normal = this.normalUnit.multiply(this.weight);
 	}
 
-	// Getters
+	public Coordinate lineIntersection(WavefrontSupportingLine o) {
+		return this.segment.lineIntersection(o.segment);
+	}
+
 	public LineSegment getSegment() {
 		return segment;
 	}
@@ -92,40 +89,45 @@ public class WavefrontSupportingLine {
 	public double getWeight() {
 		return weight;
 	}
-	
-	public Vector2D getDirection() {
-		return directionVector;
-	}
 
-	public Vector2D getUnitNormal() {
-		return unitNormal;
-	}
-
-	public Vector2D getWeightedNormal() {
-		return weightedNormal;
+	public Vector2D getNormalDirection() {
+		return normalDirection;
 	}
 
 	/**
-	 * Gets the position of the supporting line offset by time t. Note: Calculating
-	 * the infinite line representation might be more useful for intersections than
-	 * just offsetting the segment endpoints.
+	 * Unit-length normal.
+	 */
+	public Vector2D getUnitNormal() {
+		return normalUnit;
+	}
+
+	/**
+	 * Weighted.
+	 */
+	public Vector2D getNormal() {
+		return normal;
+	}
+
+	/**
+	 * Gets the position of the supporting line offset by time t. The offset is
+	 * applied along the weighted normal direction.
 	 * 
 	 * @param t time
-	 * @return The offset line segment (for visualization or basic checks)
+	 * @return The offset line segment (endpoints translated by normal * t)
 	 */
 	public LineSegment getOffsetSegment(double t) {
-		Vector2D offset = weightedNormal.multiply(t);
+		Vector2D offset = normal.multiply(t);
 		Coordinate p0Offset = Vector2D.create(segment.p0).add(offset).toCoordinate();
 		Coordinate p1Offset = Vector2D.create(segment.p1).add(offset).toCoordinate();
 		return new LineSegment(p0Offset, p1Offset);
 	}
 
-	// TODO: Potentially add methods to get an infinite Line representation (e.g.,
-	// using parameters a,b,c for ax+by+c=0)
-	// for more robust intersection calculations, especially for offset lines.
-
 	@Override
 	public String toString() {
-		return "WSL{" + segment + ", w=" + weight + ", n=" + unitNormal + '}';
+		return "WSL{" + segment + ", w=" + weight + ", n=" + normalUnit + '}';
+	}
+
+	public boolean isVertical() {
+		return segment.isVertical();
 	}
 }
