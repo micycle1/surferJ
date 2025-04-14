@@ -8,10 +8,16 @@ import org.locationtech.jts.algorithm.LineIntersector;
 import org.locationtech.jts.algorithm.Orientation;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.math.Vector2D;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.github.micycle1.surferj.SurfConstants;
+import com.github.micycle1.surferj.wavefront.WavefrontPropagator;
 
 public class WavefrontVertex {
+
+	private static final Logger LOGGER = LoggerFactory.getLogger(WavefrontPropagator.class);
+
 	private static final AtomicLong idCounter = new AtomicLong(0);
 	private static final Coordinate ORIGIN = new Coordinate(0, 0);
 	public final long id;
@@ -37,12 +43,6 @@ public class WavefrontVertex {
 	WavefrontVertex[] nextVertex = new WavefrontVertex[2];
 	WavefrontVertex[] prevVertex = new WavefrontVertex[2];
 
-	// NOTE below from an older approach
-	private WavefrontVertex nextVertex0 = null; // Next vertex along edge0 (CCW) boundary path
-	private WavefrontVertex prevVertex0 = null; // Previous vertex along edge0 boundary path
-	private WavefrontVertex nextVertex1 = null; // Next vertex along edge1 (CW) boundary path
-	private WavefrontVertex prevVertex1 = null; // Previous vertex along edge1 boundary path
-
 	// Placeholder for the infinite vertex
 	public static final WavefrontVertex INFINITE_VERTEX = new WavefrontVertex();
 
@@ -58,7 +58,7 @@ public class WavefrontVertex {
 		} else if (id == 1) {
 			return edge1;
 		}
-		System.err.println("Tried to get wavefront not in [0,1]!");
+		LOGGER.error("Tried to get wavefront not in [0,1]!");
 		return null;
 	}
 
@@ -226,7 +226,7 @@ public class WavefrontVertex {
 				// away or angle is straight.
 				// Let's follow C++ for now, but this might need review.
 //                 LOGGER.warning("Parallel lines encountered in makeVertex. Setting posZero = current pos. Verify logic.");
-				System.err.println("Parallel lines encountered in makeVertex. Setting posZero = current pos. Verify logic.");
+				LOGGER.warn("Parallel lines encountered in makeVertex. Setting posZero = current pos. Verify logic.");
 				posZero = pos;
 				break;
 
@@ -286,7 +286,7 @@ public class WavefrontVertex {
 			this.edge1 = edge1;
 			// Potentially throw exception if caller tries to set edges on infinite?
 			// Or just return silently. For now, store and return.
-			System.err.println("Warning: setIncidentEdges called on infinite vertex V" + id + ". Geometry not recalculated.");
+			LOGGER.warn("setIncidentEdges called on infinite vertex V" + id + ". Geometry not recalculated.");
 			return;
 		}
 
@@ -339,7 +339,7 @@ public class WavefrontVertex {
 		}
 		if (this.angle == null) {
 			// This should not happen after constructor initialization
-			System.err.println("Error: Vertex angle not initialized for V" + id + ". Returning default true.");
+			LOGGER.error("Vertex angle not initialized for V" + id + ". Returning default true.");
 			return true;
 		}
 		return this.angle != VertexAngle.RIGHT_TURN;
@@ -360,7 +360,7 @@ public class WavefrontVertex {
 		}
 		if (this.angle == null) {
 			// This should not happen after constructor initialization
-			System.err.println("Error: Vertex angle not initialized for V" + id + ". Returning default true.");
+			LOGGER.error("Vertex angle not initialized for V" + id + ". Returning default true.");
 			return true;
 		}
 		return this.angle != VertexAngle.LEFT_TURN;
@@ -390,6 +390,7 @@ public class WavefrontVertex {
 		return posStop;
 	}
 
+	// incident_wavefront_edge(int) in C++
 	public WavefrontEdge getIncidentEdge(int index) {
 		if (index == 0) {
 			return edge0;
@@ -405,8 +406,8 @@ public class WavefrontVertex {
 		if (hasStopped) {
 			// Allow stopping again if time and position are consistent (within tolerance)?
 			if (Math.abs(time - this.timeStop) > 1e-9 || !position.equals2D(this.posStop, 1e-9)) {
-				System.err.println("Warning: Vertex " + this.id + " already stopped at " + this.timeStop + "/" + this.posStop + ", attempting to stop again at "
-						+ time + "/" + position);
+				LOGGER.warn("Vertex " + this.id + " already stopped at " + this.timeStop + "/" + this.posStop + ", attempting to stop again at " + time + "/"
+						+ position);
 				// Optionally throw exception or just ignore? Ignoring for now.
 				return;
 			}
@@ -429,12 +430,15 @@ public class WavefrontVertex {
 		// velocity
 		// stop(time, calculatedPos);
 		stop(time, this.initialPosition); // Placeholder: stops at initial position
-		System.err.println("Warning: Vertex.stop(time) called without position - stopping at initialPosition. Velocity needed.");
+		LOGGER.warn("Vertex.stop(time) called without position - stopping at initialPosition. Velocity needed.");
+	}
+
+	public void setNextVertex(int side, WavefrontVertex next) {
+		setNextVertex(side, next, true);
 	}
 
 	public void setNextVertex(int side, WavefrontVertex next, boolean headToTail) {
 		nextVertex[side] = next;
-
 		if (headToTail) {
 			next.prevVertex[side] = this;
 		} else {
@@ -442,85 +446,14 @@ public class WavefrontVertex {
 		}
 	}
 
-	// --- DCEL Linking Methods ---
-	public void setNextVertex(int side, WavefrontVertex next) {
-		if (side == 0) {
-			this.nextVertex0 = next;
-		} else if (side == 1) {
-			this.nextVertex1 = next;
-		} else {
-			throw new IndexOutOfBoundsException("Side must be 0 or 1");
-		}
-	}
-
-	public void setPrevVertex(int side, WavefrontVertex prev) {
-		if (side == 0) {
-			this.prevVertex0 = prev;
-		} else if (side == 1) {
-			this.prevVertex1 = prev;
-		} else {
-			throw new IndexOutOfBoundsException("Side must be 0 or 1");
-		}
-	}
-
-	public WavefrontVertex getNextVertex(int side) {
-		return side == 0 ? nextVertex0 : nextVertex1;
-	}
-
-	public WavefrontVertex getPrevVertex(int side) {
-		return side == 0 ? prevVertex0 : prevVertex1;
-	}
-
 	/**
 	 * Links the tail of this vertex (prev pointers) to the tail of another vertex.
 	 * Used after splits.
 	 */
 	public void linkTailToTail(WavefrontVertex other) {
-		if (this.prevVertex0 != null || other.prevVertex1 != null) {
-			throw new IllegalStateException("Cannot link tails: previous pointers already set.");
-		}
-		this.prevVertex0 = other; // NOTE unused
-		other.prevVertex1 = this; // NOTE unused
-
 		prevVertex[0] = other;
 		other.prevVertex[1] = this;
-		System.out.println("DCEL Link T2T: " + this + "[0] <- " + other + "[1]");
-	}
-
-	/**
-	 * Links the head of this vertex (next[side]) to the tail of another vertex
-	 * (prev[side]).
-	 */
-	public void linkHeadToTail(int side, WavefrontVertex next) {
-		if (side != 0 && side != 1) {
-			throw new IndexOutOfBoundsException("Side must be 0 or 1");
-		}
-		if (getNextVertex(side) != null || next.getPrevVertex(side) != null) {
-			System.err.println("Warning: Overwriting DCEL H2T links between " + this + " and " + next + " on side " + side);
-			// throw new IllegalStateException("Cannot link head-to-tail: pointers already
-			// set.");
-		}
-		setNextVertex(side, next);
-		next.setPrevVertex(side, this);
-		System.out.println("DCEL Link H2T: " + this + "[" + side + "] -> " + next + "[" + side + "]");
-	}
-
-	/**
-	 * Links the head of this vertex (next[thisSide]) to the head of another vertex
-	 * (next[otherSide]).
-	 */
-	public void linkHeadToHead(int thisSide, WavefrontVertex other, int otherSide) {
-		if ((thisSide != 0 && thisSide != 1) || (otherSide != 0 && otherSide != 1)) {
-			throw new IndexOutOfBoundsException("Side must be 0 or 1");
-		}
-		if (getNextVertex(thisSide) != null || other.getNextVertex(otherSide) != null) {
-			System.err.println("Warning: Overwriting DCEL H2H links between " + this + " and " + other);
-			// throw new IllegalStateException("Cannot link head-to-head: pointers already
-			// set.");
-		}
-		setNextVertex(thisSide, other);
-		other.setNextVertex(otherSide, this);
-		System.out.println("DCEL Link H2H: " + this + "[" + thisSide + "] <-> " + other + "[" + otherSide + "]");
+		LOGGER.debug("DCEL Link T2T: " + this + "[0] <- " + other + "[1]");
 	}
 
 	/**
@@ -539,7 +472,7 @@ public class WavefrontVertex {
 				// (This helps catch logical errors in how edges are passed)
 				if (!checkEdgeConsistency()) {
 					// Log error and set defaults if consistency check fails
-					System.err.println("Error: Edge consistency check failed for V" + id + ". Setting default geometry.");
+					LOGGER.error("Edge consistency check failed for V" + id + ". Setting default geometry.");
 					setDefaultGeometry();
 					return; // Exit after setting defaults
 				}
@@ -552,7 +485,7 @@ public class WavefrontVertex {
 
 				// Check for degenerate edges before calculation
 				if (dir0.lengthSquared() < SurfConstants.ZERO_NORM_SQ || dir1.lengthSquared() < SurfConstants.ZERO_NORM_SQ) {
-					System.err.println("Warning: Degenerate edge geometry detected for V" + id + ". Setting default angle/velocity.");
+					LOGGER.warn("Degenerate edge geometry detected for V" + id + ". Setting default angle/velocity.");
 					setDefaultGeometry(); // Use the same defaults as the else block
 					return;
 				}
@@ -563,7 +496,7 @@ public class WavefrontVertex {
 				velocity = calculateVelocity(edge0, edge1, angle, infiniteSpeed, initialPosition);
 
 			} catch (Exception e) {
-				System.err.println("Error during geometry recalculation for V" + id + ": " + e.getMessage());
+				LOGGER.error("Error during geometry recalculation for V" + id + ": " + e.getMessage());
 				e.printStackTrace(); // Or log properly
 				setDefaultGeometry(); // Fallback to safe defaults
 			}
@@ -595,10 +528,10 @@ public class WavefrontVertex {
 		boolean edge1_ok = (this.edge1.getVertex(0) == this); // edge1 should start here
 
 		if (!edge0_ok) {
-			System.err.println("Consistency Error: V" + id + " is not vertex 1 of its edge0 (" + this.edge0 + ")");
+			LOGGER.error("Consistency V" + id + " is not vertex 1 of its edge0 (" + this.edge0 + ")");
 		}
 		if (!edge1_ok) {
-			System.err.println("Consistency Error: V" + id + " is not vertex 0 of its edge1 (" + this.edge1 + ")");
+			LOGGER.error("Consistency V" + id + " is not vertex 0 of its edge1 (" + this.edge1 + ")");
 		}
 		return edge0_ok && edge1_ok;
 	}
@@ -624,7 +557,7 @@ public class WavefrontVertex {
 			}
 
 			if (commonVertex == null) {
-				System.err.println("Warning: No common vertex found between edges");
+				LOGGER.warn("No common vertex found between edges");
 				return VertexAngle.COLLINEAR;
 			}
 
@@ -633,7 +566,7 @@ public class WavefrontVertex {
 			// Find p0: The "other" vertex of edge0
 			WavefrontVertex v_p0 = (edge0.getVertex(0) == commonVertex) ? edge0.getVertex(1) : edge0.getVertex(0);
 			if (v_p0 == null) {
-				System.err.println("Warning: Could not find preceding vertex p0 for angle calculation");
+				LOGGER.warn("Could not find preceding vertex p0 for angle calculation");
 				return VertexAngle.COLLINEAR;
 			}
 			Coordinate p0 = v_p0.initialPosition;
@@ -641,7 +574,7 @@ public class WavefrontVertex {
 			// Find p2: The "other" vertex of edge1
 			WavefrontVertex v_p2 = (edge1.getVertex(0) == commonVertex) ? edge1.getVertex(1) : edge1.getVertex(0);
 			if (v_p2 == null) {
-				System.err.println("Warning: Could not find succeeding vertex p2 for angle calculation");
+				LOGGER.warn("Could not find succeeding vertex p2 for angle calculation");
 				return VertexAngle.COLLINEAR;
 			}
 			Coordinate p2 = v_p2.initialPosition;
@@ -658,11 +591,11 @@ public class WavefrontVertex {
 				case Orientation.COLLINEAR :
 					return VertexAngle.COLLINEAR;
 				default :
-					System.err.println("Warning: Unexpected JTS Orientation index: " + orientationIndex);
+					LOGGER.warn("Unexpected JTS Orientation index: " + orientationIndex);
 					return VertexAngle.COLLINEAR;
 			}
 		} catch (Exception e) {
-			System.err.println("Error during JTS Orientation calculation: " + e.getMessage());
+			LOGGER.error("Error during JTS Orientation calculation: " + e.getMessage());
 			e.printStackTrace();
 			return VertexAngle.COLLINEAR;
 		}
@@ -702,14 +635,14 @@ public class WavefrontVertex {
 					return new Coordinate(intersect.getX() - initialPosition.getX(), intersect.getY() - initialPosition.getY());
 				} else {
 					// Parallel lines? Should have been caught by COLLINEAR? Error.
-					System.err.println("Error: No intersection for non-collinear vertex at time 1. Setting zero velocity.");
+					LOGGER.error("No intersection for non-collinear vertex at time 1. Setting zero velocity.");
 					return new Coordinate(0, 0);
 				}
 			} else { // COLLINEAR and NONE infinite speed (implies same direction, same weight)
 				// Velocity is along the normal (weighted normal?) - check C++ intent
 				Vector2D weightedNormal = edge0.getSupportingLine().getNormal(); // Get weighted normal
 				if (weightedNormal == null) { // Handle degenerate case
-					System.err.println("Error: Cannot get weighted normal for collinear vertex. Setting zero velocity.");
+					LOGGER.error("Cannot get weighted normal for collinear vertex. Setting zero velocity.");
 					return new Coordinate(0, 0);
 				} else {
 					// Velocity is w * unit_normal. Since getNormal() = w * unit_normal, this is

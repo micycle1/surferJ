@@ -1,7 +1,7 @@
 package com.github.micycle1.surferj.wavefront;
 
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.github.micycle1.surferj.SurfConstants;
 import com.github.micycle1.surferj.collapse.CollapseType;
@@ -13,9 +13,10 @@ import com.github.micycle1.surferj.kinetics.KineticTriangulation;
  * EventQueue. It advances simulation time, handles events by delegating to
  * KineticTriangulation, and manages the overall simulation lifecycle.
  */
+
 public class WavefrontPropagator {
 
-	private static final Logger LOGGER = Logger.getLogger(WavefrontPropagator.class.getName());
+	private static final Logger LOGGER = LoggerFactory.getLogger(WavefrontPropagator.class);
 
 	private final SkeletonStructure sk; // Reference back to the main structure
 	private EventQueue eq; // The event queue, set during initialization
@@ -186,7 +187,7 @@ public class WavefrontPropagator {
 
 		EventQueueItem nextItem = eq.poll(); // Poll retrieves and removes the head
 		if (nextItem == null) { // Should not happen if noMoreEvents was false, but safety check
-			LOGGER.warning("Polled null item unexpectedly.");
+			LOGGER.warn("Polled null item unexpectedly.");
 			finalizeSim();
 			return;
 		}
@@ -200,7 +201,7 @@ public class WavefrontPropagator {
 		}
 
 		this.eventCtr++;
-		LOGGER.log(Level.INFO, "--> Processing Event #" + eventCtr + " @ t=" + String.format("%.6f", time) + ": " + event);
+		LOGGER.info("Processing Event #{} @ t={}: {}", eventCtr, String.format("%.6f", time), event);
 
 		eventHandler.handleEvent(event);
 
@@ -208,7 +209,7 @@ public class WavefrontPropagator {
 		// This ensures the queue is correct before the *next* advanceStep or check.
 		eq.processPendingUpdates(this.time);
 
-		LOGGER.log(Level.INFO, "<-- Finished Event #" + eventCtr + ". Queue size: " + eq.size());
+		LOGGER.info("Finished Event #{}. Queue size: {}", eventCtr, eq.size());
 
 		// Update last event info
 		this.lastEventTime = this.time;
@@ -216,13 +217,13 @@ public class WavefrontPropagator {
 
 		// Check again if simulation should end
 		if (noMoreEvents()) {
-			LOGGER.info("All events processed after event #" + eventCtr);
+			LOGGER.info("All events processed after event #{}", eventCtr);
 			finalizeSim();
 		} else {
 			// Log info about the *next* event
 			EventQueueItem nextEvent = eq.peek(); // Peek after updates
 			if (nextEvent != null) {
-				LOGGER.log(Level.FINE, "    Next event: " + nextEvent.getEvent() + " @ t=" + String.format("%.6f", nextEvent.getEvent().getTime()));
+				LOGGER.debug("    Next event: {} @ t={}", nextEvent.getEvent(), String.format("%.6f", nextEvent.getEvent().getTime()));
 			}
 		}
 	}
@@ -239,7 +240,7 @@ public class WavefrontPropagator {
 			}
 			advanceStep();
 		}
-		LOGGER.info("Simulation finished. Total events processed: " + eventCtr);
+		LOGGER.info("Simulation finished. Total events processed: {}", eventCtr);
 	}
 
 	/**

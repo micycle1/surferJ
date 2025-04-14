@@ -11,6 +11,8 @@ import org.apache.commons.lang3.tuple.ImmutableTriple;
 import org.apache.commons.lang3.tuple.Pair;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.math.Vector2D;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 // Import logging framework if desired, e.g. import org.slf4j.Logger; import org.slf4j.LoggerFactory;
 import com.github.micycle1.surferj.SurfConstants;
@@ -35,6 +37,8 @@ import com.github.micycle1.surferj.kinetics.WavefrontVertex.InfiniteSpeedType;
  * Mirrors the C++ KineticTriangle class.
  */
 public class KineticTriangle {
+
+	private static final Logger LOGGER = LoggerFactory.getLogger(KineticTriangle.class);
 
 	// NOTE quite confident this is thoroughly implemented!
 	// NOTE good starting point to make other code
@@ -232,7 +236,7 @@ public class KineticTriangle {
 			} else {
 				// This case implies isConstrained was true but wavefronts[edgeIdxCW] became
 				// null concurrently? Unlikely but possible.
-				System.err.println("Warning: Constraint flag mismatch during setVertex for " + getName() + " edge " + edgeIdxCW);
+				LOGGER.warn("Constraint flag mismatch during setVertex for " + getName() + " edge " + edgeIdxCW);
 			}
 		}
 
@@ -242,7 +246,7 @@ public class KineticTriangle {
 			if (edge != null) {
 				edge.setVertexAndUpdateAdj(1, v); // Vertex 'index' is vertex 1 (CW) for edge 'edgeIdxCCW'
 			} else {
-				System.err.println("Warning: Constraint flag mismatch during setVertex for " + getName() + " edge " + edgeIdxCCW);
+				LOGGER.warn("Constraint flag mismatch during setVertex for " + getName() + " edge " + edgeIdxCCW);
 			}
 		}
 
@@ -260,8 +264,8 @@ public class KineticTriangle {
 		}
 		// Check component compatibility if setting a non-null neighbor
 		if (neighbor != null && neighbor.component != this.component) {
-			System.err.println("Warning: Setting neighbor " + neighbor.getName() + " (comp " + neighbor.component + ") for triangle " + getName() + " (comp "
-					+ this.component + ") with different component.");
+			LOGGER.warn("Setting neighbor " + neighbor.getName() + " (comp " + neighbor.component + ") for triangle " + getName() + " (comp " + this.component
+					+ ") with different component.");
 			// Depending on strictness, could throw an exception here.
 		}
 
@@ -324,7 +328,7 @@ public class KineticTriangle {
 		if (isDead) {
 			// log.warn("markDead() called multiple times for {}", getName()); // Use logger
 			// if available
-			System.err.println("Warning: markDead() called multiple times for " + getName());
+			LOGGER.warn("markDead() called multiple times for " + getName());
 			return;
 		}
 		this.isDead = true;
@@ -429,7 +433,7 @@ public class KineticTriangle {
 		if (cachedCollapseSpec == null) {
 			// This should not happen if logic is correct, calculateCollapseSpec should
 			// always return something (even NEVER)
-			System.err.println("Error: Cached collapse spec is null after calculation/cache hit for " + getName() + " at time " + currentTime);
+			LOGGER.error("Cached collapse spec is null after calculation/cache hit for " + getName() + " at time " + currentTime);
 			// Force recalculation or return NEVER as fallback?
 			cachedCollapseSpec = calculateCollapseSpec(currentTime); // Try again
 			if (cachedCollapseSpec == null) { // Still null? Major issue.
@@ -463,7 +467,7 @@ public class KineticTriangle {
 
 		// log.debug("Refining collapse spec for {} from {} to {}", getName(),
 		// cachedCollapseSpec.getType(), refinedSpec.getType()); // Use logger
-		System.out.println("Refining collapse spec for " + getName() + " from " + cachedCollapseSpec.getType() + " to " + refinedSpec.getType());
+		LOGGER.debug("Refining collapse spec for " + getName() + " from " + cachedCollapseSpec.getType() + " to " + refinedSpec.getType());
 		this.cachedCollapseSpec = refinedSpec;
 		// isCollapseSpecValid remains true
 		return this.cachedCollapseSpec;
@@ -473,7 +477,7 @@ public class KineticTriangle {
 		// Added null check for vertices early on, might be needed if construction is
 		// delayed
 		if (vertices[0] == null || vertices[1] == null || vertices[2] == null) {
-			System.err.println("Warning: Calculating collapse for incomplete triangle " + getName());
+			LOGGER.warn("Calculating collapse for incomplete triangle " + getName());
 			return CollapseSpec.NEVER; // Cannot calculate
 		}
 
@@ -481,7 +485,7 @@ public class KineticTriangle {
 		if (infiniteSpeedType != InfiniteSpeedType.NONE) {
 			// log.debug("KT{}: Calculating collapse - Has infinitely fast vertex ({})", id,
 			// infiniteSpeedType); // Use logger
-			System.out.println("  KT" + id + ": Calculating collapse - Has infinitely fast vertex (" + infiniteSpeedType + ")");
+			LOGGER.debug("  KT" + id + ": Calculating collapse - Has infinitely fast vertex (" + infiniteSpeedType + ")");
 			if (infiniteSpeedType == InfiniteSpeedType.OPPOSING) {
 				return new CollapseSpec(CollapseType.FACE_HAS_INFINITELY_FAST_VERTEX_OPPOSING, currentTime, this);
 			} else { // WEIGHTED
@@ -491,7 +495,7 @@ public class KineticTriangle {
 					double relevantSpeedFactor = edgeInfo.getRight(); // Use the factor as secondary key
 					return new CollapseSpec(CollapseType.FACE_HAS_INFINITELY_FAST_VERTEX_WEIGHTED, currentTime, this, relevantEdge, relevantSpeedFactor);
 				} else {
-					System.err.println("Error: KT" + id + " reported WEIGHTED infinite speed, but no relevant edge found.");
+					LOGGER.error("KT" + id + " reported WEIGHTED infinite speed, but no relevant edge found.");
 					return new CollapseSpec(CollapseType.INVALID_EVENT, currentTime, this);
 				}
 			}
@@ -500,12 +504,12 @@ public class KineticTriangle {
 		if (isUnbounded()) {
 			// log.debug("KT{}: Calculating collapse for UNBOUNDED triangle.", id); // Use
 			// logger
-			System.out.println("  KT" + id + ": Calculating collapse for UNBOUNDED triangle.");
+			LOGGER.debug("  KT" + id + ": Calculating collapse for UNBOUNDED triangle.");
 			return calculateCollapseUnbounded(currentTime);
 		} else {
 			// log.debug("KT{}: Calculating collapse for BOUNDED triangle.", id); // Use
 			// logger
-			System.out.println("  KT" + id + ": Calculating collapse for BOUNDED triangle.");
+			LOGGER.debug("  KT" + id + ": Calculating collapse for BOUNDED triangle.");
 			return calculateCollapseBounded(currentTime);
 		}
 	}
@@ -552,7 +556,7 @@ public class KineticTriangle {
 		int numWavefronts = countWavefronts();
 		// log.debug(" KT{} Bounded: Num Wavefronts: {}", id, numWavefronts); // Use
 		// logger
-		System.out.println("    KT" + id + " Bounded: Num Wavefronts: " + numWavefronts);
+		LOGGER.debug("    KT" + id + " Bounded: Num Wavefronts: " + numWavefronts);
 
 		switch (numWavefronts) {
 			case 3 :
@@ -570,7 +574,7 @@ public class KineticTriangle {
 
 	private CollapseSpec calculateCollapseBoundedConstrained3(double currentTime) {
 		// log.debug(" KT{} Calculating bounded constrained 3", id); // Use logger
-		System.out.println("      KT" + id + " Calculating bounded constrained 3");
+		LOGGER.debug("      KT" + id + " Calculating bounded constrained 3");
 		// Fetch collapse spec for one edge (assumes others match)
 		if (wavefronts[0] == null) {
 			throw new IllegalStateException("Constrained 3 triangle KT" + id + " missing wavefront 0."); // Should not happen
@@ -590,14 +594,14 @@ public class KineticTriangle {
 		} else if (cs0.getType() == CollapseType.NEVER) {
 			return CollapseSpec.NEVER;
 		} else {
-			System.err.println("Warning: Unexpected collapse type " + cs0.getType() + " from edge 0 in constrained 3 KT" + id);
+			LOGGER.warn("Unexpected collapse type " + cs0.getType() + " from edge 0 in constrained 3 KT" + id);
 			return CollapseSpec.NEVER;
 		}
 	}
 
 	private CollapseSpec calculateCollapseBoundedConstrained2(double currentTime) {
 		// log.debug(" KT{} Calculating bounded constrained 2", id); // Use logger
-		System.out.println("      KT" + id + " Calculating bounded constrained 2");
+		LOGGER.debug("      KT" + id + " Calculating bounded constrained 2");
 		int c1_idx = -1, c2_idx = -1;
 		for (int i = 0; i < 3; i++) {
 			if (wavefronts[i] != null) {
@@ -617,8 +621,8 @@ public class KineticTriangle {
 
 		// log.debug(" KT{} Edge {} collapse: {}", id, c1_idx, cs1); // Use logger
 		// log.debug(" KT{} Edge {} collapse: {}", id, c2_idx, cs2); // Use logger
-		System.out.println("        KT" + id + " Edge " + c1_idx + " collapse: " + cs1);
-		System.out.println("        KT" + id + " Edge " + c2_idx + " collapse: " + cs2);
+		LOGGER.debug("        KT" + id + " Edge " + c1_idx + " collapse: " + cs1);
+		LOGGER.debug("        KT" + id + " Edge " + c2_idx + " collapse: " + cs2);
 
 		final boolean cs1ValidFuture = cs1.getType() == CollapseType.CONSTRAINT_COLLAPSE && cs1.getTime() >= currentTime - SurfConstants.ZERO_NT;
 		final boolean cs2ValidFuture = cs2.getType() == CollapseType.CONSTRAINT_COLLAPSE && cs2.getTime() >= currentTime - SurfConstants.ZERO_NT;
@@ -627,34 +631,34 @@ public class KineticTriangle {
 			if (Math.abs(cs1.getTime() - cs2.getTime()) < SurfConstants.ZERO_NT) {
 				// log.debug(" KT{} Simultaneous collapse -> TRIANGLE_COLLAPSE @ {}", id,
 				// cs1.getTime()); // Use logger
-				System.out.println("        KT" + id + " Simultaneous collapse -> TRIANGLE_COLLAPSE @ " + cs1.getTime());
+				LOGGER.debug("        KT" + id + " Simultaneous collapse -> TRIANGLE_COLLAPSE @ " + cs1.getTime());
 				return new CollapseSpec(CollapseType.TRIANGLE_COLLAPSE, cs1.getTime(), this);
 			} else {
 
 				CollapseSpec earlier = ObjectUtils.min(cs1, cs2);
 				// log.debug(" KT{} Returning earlier edge collapse: {}", id, earlier); // Use
 				// logger
-				System.out.println("        KT" + id + " Returning earlier edge collapse: " + earlier);
+				LOGGER.debug("        KT" + id + " Returning earlier edge collapse: " + earlier);
 				return earlier;
 			}
 		} else if (cs1ValidFuture) {
 			// log.debug(" KT{} Returning edge 1 collapse: {}", id, cs1); // Use logger
-			System.out.println("        KT" + id + " Returning edge 1 collapse: " + cs1);
+			LOGGER.debug("        KT" + id + " Returning edge 1 collapse: " + cs1);
 			return cs1;
 		} else if (cs2ValidFuture) {
 			// log.debug(" KT{} Returning edge 2 collapse: {}", id, cs2); // Use logger
-			System.out.println("        KT" + id + " Returning edge 2 collapse: " + cs2);
+			LOGGER.debug("        KT" + id + " Returning edge 2 collapse: " + cs2);
 			return cs2;
 		} else {
 			// log.debug(" KT{} No future edge collapses -> NEVER", id); // Use logger
-			System.out.println("        KT" + id + " No future edge collapses -> NEVER");
+			LOGGER.debug("        KT" + id + " No future edge collapses -> NEVER");
 			return CollapseSpec.NEVER;
 		}
 	}
 
 	private CollapseSpec calculateCollapseBoundedConstrained1(double currentTime) {
 		// log.debug(" KT{} Calculating bounded constrained 1", id); // Use logger
-		System.out.println("      KT" + id + " Calculating bounded constrained 1");
+		LOGGER.debug("      KT" + id + " Calculating bounded constrained 1");
 		int c_idx = -1;
 		WavefrontEdge wf = null;
 		for (int i = 0; i < 3; i++) {
@@ -670,60 +674,59 @@ public class KineticTriangle {
 
 		// log.debug(" KT{} Constraint edge index: {} (Edge {})", id, c_idx, wf.id); //
 		// Use logger
-		System.out.println("        KT" + id + " Constraint edge index: " + c_idx + " (Edge " + wf.id + ")");
+		LOGGER.debug("        KT" + id + " Constraint edge index: " + c_idx + " (Edge " + wf.id + ")");
 
 		final Polynomial determinant = computeDeterminantPolynomial();
 		// log.debug(" KT{} Determinant: {}", id, determinant); // Use logger
-		System.out.println("        KT" + id + " Determinant: " + determinant);
+		LOGGER.debug("        KT" + id + " Determinant: " + determinant);
 		// Check determinant sign at current time (should be >= 0 within tolerance)
 		double detNow = determinant.evaluate(currentTime);
 		if (detNow < -SurfConstants.ZERO_AREA_SQ) {
-			System.err.println("Warning: Triangle " + getName() + " has negative area " + detNow + " at time " + currentTime
-					+ ". (triangle's orientation fipped earlier?)");
+			LOGGER.warn("Triangle " + getName() + " has negative area " + detNow + " at time " + currentTime + ". (triangle's orientation fipped earlier?)");
 			// Depending on strictness, could return INVALID or proceed cautiously.
 			// can be ok, if event occurred in past
 		}
 
 		if (wf.parallelEndpoints(currentTime)) {
 			// log.debug(" KT{} Endpoints are parallel.", id); // Use logger
-			System.out.println("        KT" + id + " Endpoints are parallel.");
+			LOGGER.debug("        KT" + id + " Endpoints are parallel.");
 			EdgeCollapseSpec edgeCollapse = wf.getEdgeCollapse(currentTime);
 			if (edgeCollapse.getType() == EdgeCollapseType.ALWAYS) {
 				// log.debug(" KT{} Edge collapses ALWAYS (now).", id); // Use logger
-				System.out.println("          KT" + id + " Edge collapses ALWAYS (now).");
+				LOGGER.debug("          KT" + id + " Edge collapses ALWAYS (now).");
 				return CollapseSpec.fromEdgeCollapse(edgeCollapse, this, c_idx);
 			} else { // NEVER
 				// log.debug(" KT{} Edge collapses NEVER.", id); // Use logger
-				System.out.println("          KT" + id + " Edge collapses NEVER.");
+				LOGGER.debug("          KT" + id + " Edge collapses NEVER.");
 				// Check if determinant suggests shrinkage -> split/flip
 				if (determinant.getDegree() == 1 && determinant.b < 0) { // Check if linear and decreasing
-					System.out.println("          KT" + id + " Determinant linear & decreasing, checking split/flip.");
+					LOGGER.debug("          KT" + id + " Determinant linear & decreasing, checking split/flip.");
 					return calculateSplitOrFlipEventBoundedConstrained1(currentTime, c_idx, determinant);
 				} else {
 					// log.debug(" KT{} Not linear & decreasing, returning NEVER.", id); // Use
 					// logger
-					System.out.println("          KT" + id + " Not linear & decreasing, returning NEVER.");
+					LOGGER.debug("          KT" + id + " Not linear & decreasing, returning NEVER.");
 					return CollapseSpec.NEVER;
 				}
 			}
 		} else { // Endpoints not parallel
 			// log.debug(" KT{} Endpoints are not parallel.", id); // Use logger
-			System.out.println("        KT" + id + " Endpoints are not parallel.");
+			LOGGER.debug("        KT" + id + " Endpoints are not parallel.");
 			CollapseSpec candidate = wf.getCollapse(this.component, currentTime, c_idx);
 			// log.debug(" KT{} Edge collapse candidate: {}", id, candidate); // Use logger
-			System.out.println("          KT" + id + " Edge collapse candidate: " + candidate);
+			LOGGER.debug("          KT" + id + " Edge collapse candidate: " + candidate);
 
 			boolean candidateIsFuture = candidate.getType() == CollapseType.CONSTRAINT_COLLAPSE && candidate.getTime() >= currentTime - SurfConstants.ZERO_NT;
 
 			if (determinant.getDegree() == 2) {
 				// log.debug(" KT{} Determinant is quadratic.", id); // Use logger
-				System.out.println("          KT" + id + " Determinant is quadratic.");
+				LOGGER.debug("          KT" + id + " Determinant is quadratic.");
 				boolean acceptCandidate = false;
 				if (candidateIsFuture) {
 					acceptCandidate = acceptCollapseBoundedConstrained1(candidate.getTime(), determinant, true);
 					// log.debug(" KT{} Candidate acceptable based on determinant roots? {}", id,
 					// acceptCandidate); // Use logger
-					System.out.println("          KT" + id + " Candidate acceptable based on determinant roots? " + acceptCandidate);
+					LOGGER.debug("          KT" + id + " Candidate acceptable based on determinant roots? " + acceptCandidate);
 				}
 
 				if (acceptCandidate) {
@@ -731,20 +734,20 @@ public class KineticTriangle {
 				} else {
 					// log.debug(" KT{} Edge collapse rejected or invalid, checking split/flip.",
 					// id); // Use logger
-					System.out.println("          KT" + id + " Edge collapse rejected or invalid, checking split/flip.");
+					LOGGER.debug("          KT" + id + " Edge collapse rejected or invalid, checking split/flip.");
 					return calculateSplitOrFlipEventBoundedConstrained1(currentTime, c_idx, determinant);
 				}
 			} else { // Determinant degree <= 1
 				// log.debug(" KT{} Determinant degree <= 1.", id); // Use logger
-				System.out.println("          KT" + id + " Determinant degree <= 1.");
+				LOGGER.debug("          KT" + id + " Determinant degree <= 1.");
 				if (candidateIsFuture) {
 					// log.debug(" KT{} Using edge collapse candidate.", id); // Use logger
-					System.out.println("          KT" + id + " Using edge collapse candidate.");
+					LOGGER.debug("          KT" + id + " Using edge collapse candidate.");
 					return candidate;
 				} else {
 					// log.debug(" KT{} Edge collapse is past/never, checking split/flip.", id); //
 					// Use logger
-					System.out.println("          KT" + id + " Edge collapse is past/never, checking split/flip.");
+					LOGGER.debug("          KT" + id + " Edge collapse is past/never, checking split/flip.");
 					return calculateSplitOrFlipEventBoundedConstrained1(currentTime, c_idx, determinant);
 				}
 			}
@@ -754,15 +757,14 @@ public class KineticTriangle {
 	private CollapseSpec calculateCollapseBoundedConstrained0(double currentTime) {
 		// log.debug(" KT{} Calculating bounded constrained 0 (Flip/Spoke/Meet)", id);
 		// // Use logger
-		System.out.println("      KT" + id + " Calculating bounded constrained 0 (Flip/Spoke/Meet)");
+		LOGGER.debug("      KT" + id + " Calculating bounded constrained 0 (Flip/Spoke/Meet)");
 		final Polynomial determinant = computeDeterminantPolynomial();
 		// log.debug(" KT{} Determinant: {}", id, determinant); // Use logger
-		System.out.println("        KT" + id + " Determinant: " + determinant);
+		LOGGER.debug("        KT" + id + " Determinant: " + determinant);
 		// Check determinant sign at current time
 		double detNow = determinant.evaluate(currentTime);
 		if (detNow < -SurfConstants.ZERO_AREA_SQ) {
-			System.err.println("Warning: Triangle " + getName() + " has negative area " + detNow + " at time " + currentTime
-					+ ". (triangle's orientation fipped earlier?)");
+			LOGGER.warn("Triangle " + getName() + " has negative area " + detNow + " at time " + currentTime + ". (triangle's orientation fipped earlier?)");
 		}
 
 		return calculateFlipEvent(currentTime, determinant);
@@ -772,7 +774,7 @@ public class KineticTriangle {
 
 	private CollapseSpec calculateCollapseUnbounded(double currentTime) {
 		// log.debug(" KT{} Calculating unbounded", id); // Use logger
-		System.out.println("      KT" + id + " Calculating unbounded");
+		LOGGER.debug("      KT" + id + " Calculating unbounded");
 		if (!isUnbounded()) {
 			throw new IllegalStateException("calculateCollapseUnbounded called on bounded triangle " + getName());
 		}
@@ -792,12 +794,12 @@ public class KineticTriangle {
 			edgeCollapse = boundedEdge.getCollapse(this.component, currentTime, infIdx);
 			// log.debug(" KT{} Bounded edge {} (Edge {}) collapse: {}", id, infIdx,
 			// boundedEdge.id, edgeCollapse); // Use logger
-			System.out.println("        KT" + id + " Bounded edge " + infIdx + " (Edge " + (boundedEdge != null ? boundedEdge.id : "null") + ") collapse: "
+			LOGGER.debug("        KT" + id + " Bounded edge " + infIdx + " (Edge " + (boundedEdge != null ? boundedEdge.id : "null") + ") collapse: "
 					+ edgeCollapse);
 		} else {
 			// log.debug(" KT{} Bounded edge {} is not constrained (spoke).", id, infIdx);
 			// // Use logger
-			System.out.println("        KT" + id + " Bounded edge " + infIdx + " is not constrained (spoke).");
+			LOGGER.debug("        KT" + id + " Bounded edge " + infIdx + " is not constrained (spoke).");
 		}
 
 		// 2. Check if CCW vertex from neighbor leaves the convex hull boundary
@@ -844,7 +846,7 @@ public class KineticTriangle {
 					throw new IllegalStateException("Unbounded KT" + id + " constraint flag mismatch edge " + infIdx);
 				}
 				definingVertexForLog = neighbor.getVertex(ccw(neighborInfIdx)); // This is 'v'
-				System.out.println(" KT" + id + " Using constrained edge from this triangle (Edge " + edgeE.id + ")");
+				LOGGER.debug(" KT" + id + " Using constrained edge from this triangle (Edge " + edgeE.id + ")");
 
 			} else { // neighbor is constrained
 				edgeE = neighbor.wavefronts[neighborInfIdx];
@@ -852,47 +854,47 @@ public class KineticTriangle {
 					throw new IllegalStateException("Unbounded neighbor KT" + neighbor.id + " constraint flag mismatch edge " + neighborInfIdx);
 				}
 				definingVertexForLog = getVertex(cw(infIdx)); // This is 'v'
-				System.out.println(" KT" + id + " Using constrained edge from neighbor (Edge " + edgeE.id + ")");
+				LOGGER.debug(" KT" + id + " Using constrained edge from neighbor (Edge " + edgeE.id + ")");
 			}
-			System.out.println("      (Constrained check uses common vertex V" + v.id + " against Edge " + edgeE.id + ", following C++ logic)");
+			LOGGER.debug("      (Constrained check uses common vertex V" + v.id + " against Edge " + edgeE.id + ", following C++ logic)");
 
 			final WavefrontSupportingLine lineE = edgeE.getSupportingLine();
 
 			// *** KEY CHANGE: Use common vertex 'v' for checks, following C++ logic ***
-			System.out.println(" KT" + id + " Checking relative speed of common vertex V" + v.id + " and constrained edge (Edge " + edgeE.id + ")");
+			LOGGER.debug(" KT" + id + " Checking relative speed of common vertex V" + v.id + " and constrained edge (Edge " + edgeE.id + ")");
 			final Sign edgeFaster = edgeIsFasterThanVertex(v, lineE); // Use common vertex 'v'
 
 			if (edgeFaster == Sign.POSITIVE) {
 				// C++ logic: If edge pulls away from common vertex 'v' faster, assume 'w' won't
 				// cross inwards.
-				System.out.println(" Edge " + edgeE.id + " is faster than common vertex V" + v.id + " (along normal). Treating as NEVER leaves CH.");
+				LOGGER.debug(" Edge " + edgeE.id + " is faster than common vertex V" + v.id + " (along normal). Treating as NEVER leaves CH.");
 				vertexLeavesCH = CollapseSpec.NEVER; // Match C++ behavior
 			} else if (edgeFaster == Sign.ZERO) {
 				// Parallel motion. Check if already collinear (distance is zero).
-				System.out.println(" Edge " + edgeE.id + " and common vertex V" + v.id + " have same speed along normal (parallel).");
+				LOGGER.debug(" Edge " + edgeE.id + " and common vertex V" + v.id + " have same speed along normal (parallel).");
 				VertexOnSupportingLineResult hitResult = getTimeVertexOnSupportingLine(v, lineE); // Use 'v'
 				if (hitResult.type == VertexOnSupportingLineType.ALWAYS) {
-					System.out.println(" Common vertex V" + v.id + " is always on the line (collinear). Treating as NEVER leaves CH.");
+					LOGGER.debug(" Common vertex V" + v.id + " is always on the line (collinear). Treating as NEVER leaves CH.");
 				} else { // NEVER type
-					System.out.println(" Common vertex V" + v.id + " is never on the line (parallel, offset). Treating as NEVER leaves CH.");
+					LOGGER.debug(" Common vertex V" + v.id + " is never on the line (parallel, offset). Treating as NEVER leaves CH.");
 				}
 				vertexLeavesCH = CollapseSpec.NEVER; // Match C++ behavior for ZERO sign
 			} else { // edgeFaster == Sign.NEGATIVE
 				// C++ logic: Edge is NOT pulling away faster than common vertex 'v'.
 				// Calculate time when 'v' would hit the line 'lineE'.
 				// This time is attributed to the CCW_VERTEX_LEAVES_CH event.
-				System.out.println(" Common vertex V" + v.id + " is faster than or equal speed to edge " + edgeE.id + " (along normal).");
+				LOGGER.debug(" Common vertex V" + v.id + " is faster than or equal speed to edge " + edgeE.id + " (along normal).");
 				VertexOnSupportingLineResult hitResult = getTimeVertexOnSupportingLine(v, lineE); // Use 'v'
 
 				if (hitResult.type == VertexOnSupportingLineType.ONCE && hitResult.time >= currentTime - SurfConstants.ZERO_NT) {
 					// Check if the event V hits Line E occurs in the future
-					System.out.println(" Common vertex V" + v.id + " hits line of edge " + edgeE.id + " at future time: " + hitResult.time
+					LOGGER.debug(" Common vertex V" + v.id + " hits line of edge " + edgeE.id + " at future time: " + hitResult.time
 							+ ". Creating CCW_VERTEX_LEAVES_CH event.");
 					// Assign this time to the 'w' leaving event, using the original triangle's
 					// infIdx
 					vertexLeavesCH = new CollapseSpec(CollapseType.CCW_VERTEX_LEAVES_CH, hitResult.time, this, infIdx);
 				} else {
-					System.out.println(" Common vertex V" + v.id + " hits line of edge " + edgeE.id + " in past or never/always. Treating as NEVER leaves CH.");
+					LOGGER.debug(" Common vertex V" + v.id + " hits line of edge " + edgeE.id + " in past or never/always. Treating as NEVER leaves CH.");
 					// vertexLeavesCH remains NEVER
 				}
 			}
@@ -903,7 +905,7 @@ public class KineticTriangle {
 			if (u == null || u.isInfinite()) {
 				throw new IllegalStateException("Invalid vertex u for unbounded KT" + id);
 			}
-			System.out.println(" KT" + id + " Checking if vertex w (V" + w.id + ") leaves CH across spoke (u=V" + u.id + ", v=V" + v.id + ")");
+			LOGGER.debug(" KT" + id + " Checking if vertex w (V" + w.id + ") leaves CH across spoke (u=V" + u.id + ", v=V" + v.id + ")");
 			boolean sameVel = u.getVelocity().equals(v.getVelocity()) && v.getVelocity().equals(w.getVelocity());
 			if (sameVel) {
 				// Match C++ logic: Check for coincident vertices. If not coincident, result is
@@ -916,13 +918,13 @@ public class KineticTriangle {
 
 				if (coincident) {
 					// C++ aborts here. We should probably throw or handle distinct from NEVER.
-					System.err.println("Warning: Vertices u,v,w have same velocity AND are coincident. C++ would abort.");
+					LOGGER.warn("Vertices u,v,w have same velocity AND are coincident. C++ would abort.");
 					// Decide on appropriate error handling or specific CollapseSpec type if needed.
 					// For now, mirroring the 'NEVER' from the non-coincident case, but this is
 					// ambiguous.
 					vertexLeavesCH = CollapseSpec.NEVER; // Or throw new IllegalStateException("...");
 				} else {
-					System.out.println(" Vertices u,v,w have same velocity, not coincident -> NEVER leaves CH.");
+					LOGGER.debug(" Vertices u,v,w have same velocity, not coincident -> NEVER leaves CH.");
 					vertexLeavesCH = CollapseSpec.NEVER; // This matches the C++ 'else' branch for non-coincident.
 				}
 			} else {
@@ -931,10 +933,10 @@ public class KineticTriangle {
 				Optional<Double> collapseTimeOpt = getGenericCollapseTime(currentTime, determinantUVw);
 				if (collapseTimeOpt.isPresent()) {
 					double collapseTime = collapseTimeOpt.get();
-					System.out.println(" Vertices u,v,w become collinear at time: " + collapseTime);
+					LOGGER.debug(" Vertices u,v,w become collinear at time: " + collapseTime);
 					vertexLeavesCH = new CollapseSpec(CollapseType.CCW_VERTEX_LEAVES_CH, collapseTime, this, infIdx);
 				} else {
-					System.out.println(" Vertices u,v,w never become collinear in the future.");
+					LOGGER.debug(" Vertices u,v,w never become collinear in the future.");
 					// vertexLeavesCH remains NEVER
 				}
 			}
@@ -942,8 +944,8 @@ public class KineticTriangle {
 
 		// log.debug(" KT{} Edge collapse: {}", id, edgeCollapse); // Use logger
 		// log.debug(" KT{} Vertex leaves CH: {}", id, vertexLeavesCH); // Use logger
-		System.out.println("        KT" + id + " Final Edge collapse: " + edgeCollapse);
-		System.out.println("        KT" + id + " Final Vertex leaves CH: " + vertexLeavesCH);
+		LOGGER.debug("        KT" + id + " Final Edge collapse: " + edgeCollapse);
+		LOGGER.debug("        KT" + id + " Final Vertex leaves CH: " + vertexLeavesCH);
 
 		// Return the earliest of the two possible events
 		return ObjectUtils.min(edgeCollapse, vertexLeavesCH);
@@ -1063,69 +1065,69 @@ public class KineticTriangle {
 			if (Math.abs(det.c) < SurfConstants.ZERO_AREA_SQ) {
 				// log.debug(" GenericCollapseTime: Degree 0, zero constant -> Event now (or
 				// always)"); // Use logger
-				System.out.println("        GenericCollapseTime: Degree 0, zero constant -> Event now (or always)");
+				LOGGER.debug("        GenericCollapseTime: Degree 0, zero constant -> Event now (or always)");
 				return Optional.of(currentTime);
 			} else {
 				// log.debug(" GenericCollapseTime: Degree 0, non-zero constant -> NEVER"); //
 				// Use logger
-				System.out.println("        GenericCollapseTime: Degree 0, non-zero constant -> NEVER");
+				LOGGER.debug("        GenericCollapseTime: Degree 0, non-zero constant -> NEVER");
 				return Optional.empty();
 			}
 		} else if (degree == 1) {
 			final double b = det.b;
 			final double c = det.c;
 			if (Math.abs(b) < SurfConstants.ZERO_POLYNOMIAL_COEFF) { // Should not happen if degree is 1
-				System.err.println("Warning: Degree 1 polynomial has near-zero slope b=" + b);
+				LOGGER.warn("Degree 1 polynomial has near-zero slope b=" + b);
 				return Math.abs(c) < SurfConstants.ZERO_AREA_SQ ? Optional.of(currentTime) : Optional.empty();
 			}
 			final double root = -c / b;
 			// log.debug(" GenericCollapseTime: Degree 1, root={}", root); // Use logger
-			System.out.println("        GenericCollapseTime: Degree 1, root=" + root);
+			LOGGER.debug("        GenericCollapseTime: Degree 1, root=" + root);
 
 			if (root >= currentTime - SurfConstants.ZERO_NT) {
 				if (Math.abs(root - currentTime) < SurfConstants.ZERO_NT) { // Root is effectively now
 					if (b < -SurfConstants.ZERO_POLYNOMIAL_COEFF) { // Shrinking (negative slope)
 						// log.debug(" Root is now, shrinking -> Event now"); // Use logger
-						System.out.println("          Root is now, shrinking -> Event now");
+						LOGGER.debug("          Root is now, shrinking -> Event now");
 						return Optional.of(currentTime);
 					} else { // Expanding or zero slope
 						// log.debug(" Root is now, expanding/flat -> No future event"); // Use logger
-						System.out.println("          Root is now, expanding/flat -> No future event");
+						LOGGER.debug("          Root is now, expanding/flat -> No future event");
 						return Optional.empty();
 					}
 				} else { // Root is strictly in the future
 					// If root is future, current area must have opposite sign of slope direction
 					if (detNow * b >= 0 && Math.abs(detNow) > SurfConstants.ZERO_AREA_SQ) {
-						System.err.println("Warning: Sign mismatch for future linear root. detNow=" + detNow + ", slope=" + b + ", root=" + root);
+						LOGGER.warn("Sign mismatch for future linear root. detNow=" + detNow + ", slope=" + b + ", root=" + root);
 						// This suggests state might be inconsistent (e.g., triangle already inverted?)
 						// Proceeding might lead to errors, but let's return the root for now.
 					}
 					// log.debug(" Root is future -> Event at {}", root); // Use logger
-					System.out.println("          Root is future -> Event at " + root);
+					LOGGER.debug("          Root is future -> Event at " + root);
 					return Optional.of(root);
 				}
 			} else {
 				// log.debug(" Root is past -> No future event"); // Use logger
-				System.out.println("          Root is past -> No future event");
+				LOGGER.debug("          Root is past -> No future event");
 				return Optional.empty();
 			}
 		} else { // degree == 2
 			// log.debug(" GenericCollapseTime: Degree 2: {}", det); // Use logger
-			System.out.println("        GenericCollapseTime: Degree 2: " + det);
+			LOGGER.debug("        GenericCollapseTime: Degree 2: " + det);
 			double[] roots = QuadraticSolver.solve(det);
 
 			if (roots.length == 0) {
 				// log.debug(" No real roots."); // Use logger
-				System.out.println("          No real roots.");
+				LOGGER.debug("          No real roots.");
 				if (detNow < 0) {
-					System.err.println("Warning: Quadratic with no real roots has negative value " + detNow);
+					LOGGER.warn("Quadratic with no real roots has negative value " + detNow);
 				}
 				return Optional.empty();
 			} else {
 				double r0 = roots[0]; // Smaller root
 				double r1 = roots[1]; // Larger root
 				// log.debug(" Roots: {}, {}", r0, r1); // Use logger
-				System.out.println("          Roots: " + r0 + ", " + r1);
+				LOGGER.debug("          Roots: " + r0 + ", " + r1);
 
 				// Select the smallest root that is >= currentTime (within tolerance)
 				Optional<Double> firstFutureRoot = Optional.empty();
@@ -1146,7 +1148,7 @@ public class KineticTriangle {
 					if (Math.abs(a) > SurfConstants.ZERO_POLYNOMIAL_COEFF) { // Check if quadratic is degenerate
 						if (a < 0 && detNow < -SurfConstants.ZERO_AREA_SQ) {
 							if (Math.abs(firstFutureRoot.get() - r1) > SurfConstants.ZERO_NT && r1 >= currentTime - SurfConstants.ZERO_NT) {
-								System.err.println("Warning: Generic time logic mismatch? a<0, detNow<0. Expected r1=" + r1 + ", got=" + firstFutureRoot.get());
+								LOGGER.warn("Generic time logic mismatch? a<0, detNow<0. Expected r1=" + r1 + ", got=" + firstFutureRoot.get());
 								// Override to r1 if it's also a future root? Or trust the 'smallest future
 								// root' logic?
 								// Let's stick to smallest future root for now.
@@ -1155,10 +1157,10 @@ public class KineticTriangle {
 						// Could add more checks here based on C++ comments if needed.
 					}
 					// log.debug(" Selected future root: {}", firstFutureRoot.get()); // Use logger
-					System.out.println("          Selected future root: " + firstFutureRoot.get());
+					LOGGER.debug("          Selected future root: " + firstFutureRoot.get());
 				} else {
 					// log.debug(" Both roots are past -> No future event"); // Use logger
-					System.out.println("          Both roots are past -> No future event");
+					LOGGER.debug("          Both roots are past -> No future event");
 				}
 				return firstFutureRoot;
 			}
@@ -1167,7 +1169,7 @@ public class KineticTriangle {
 
 	private boolean acceptCollapseBoundedConstrained1(double collapseTime, Polynomial determinant, boolean isEdgeCollapseCandidate) {
 		if (determinant.getDegree() != 2) {
-			System.err.println("Warning: acceptCollapseBoundedConstrained1 called with non-quadratic determinant for " + getName());
+			LOGGER.warn("acceptCollapseBoundedConstrained1 called with non-quadratic determinant for " + getName());
 			// Fallback for non-quadratic: If it's a future time, accept it? Or always
 			// reject?
 			// Let's return true if it's a future edge collapse, mirroring linear case.
@@ -1182,33 +1184,33 @@ public class KineticTriangle {
 
 		if (signLead < 0) { // Opens down
 			// log.debug(" AcceptCollapse: a < 0 -> Accepting"); // Use logger
-			System.out.println("          AcceptCollapse: a < 0 -> Accepting");
+			LOGGER.debug("          AcceptCollapse: a < 0 -> Accepting");
 			return true;
 		} else if (signLead == 0) { // Degenerate (linear/constant)
-			System.err.println("Warning: acceptCollapse logic encountered degenerate quadratic for " + getName());
+			LOGGER.warn("acceptCollapse logic encountered degenerate quadratic for " + getName());
 			return isEdgeCollapseCandidate; // Accept if edge collapse, reject otherwise?
 		} else { // signLead > 0, Opens up.
 			// log.debug(" AcceptCollapse: a > 0 -> Checking derivative"); // Use logger
-			System.out.println("          AcceptCollapse: a > 0 -> Checking derivative");
+			LOGGER.debug("          AcceptCollapse: a > 0 -> Checking derivative");
 			final Polynomial derivative = determinant.differentiate();
 			final double derivAtCollapse = derivative.evaluate(collapseTime);
 			// log.debug(" Derivative at collapse time {}: {}", collapseTime,
 			// derivAtCollapse); // Use logger
-			System.out.println("            Derivative at collapse time " + collapseTime + ": " + derivAtCollapse);
+			LOGGER.debug("            Derivative at collapse time " + collapseTime + ": " + derivAtCollapse);
 
 			if (Math.abs(derivAtCollapse) < SurfConstants.ZERO_POLYNOMIAL_VALUE) { // Derivative is zero
 				// log.debug(" Derivative is zero. Accepting only if edge collapse: {}",
 				// isEdgeCollapseCandidate); // Use logger
-				System.out.println("            Derivative is zero. Accepting only if edge collapse: " + isEdgeCollapseCandidate);
+				LOGGER.debug("            Derivative is zero. Accepting only if edge collapse: " + isEdgeCollapseCandidate);
 				return isEdgeCollapseCandidate;
 			} else if (derivAtCollapse < 0) { // Derivative is negative (first root)
 				// log.debug(" Derivative is negative -> Accepting (first root)"); // Use logger
-				System.out.println("            Derivative is negative -> Accepting (first root)");
+				LOGGER.debug("            Derivative is negative -> Accepting (first root)");
 				return true;
 			} else { // Derivative is positive (second root)
 				// log.debug(" Derivative is positive -> Rejecting (second root)"); // Use
 				// logger
-				System.out.println("            Derivative is positive -> Rejecting (second root)");
+				LOGGER.debug("            Derivative is positive -> Rejecting (second root)");
 				return false;
 			}
 		}
@@ -1217,7 +1219,7 @@ public class KineticTriangle {
 	private CollapseSpec calculateSplitOrFlipEventBoundedConstrained1(double currentTime, int c_idx, Polynomial determinant) {
 		// log.debug(" KT{} Calculating Split/Flip for Constrained 1 edge {}", id,
 		// c_idx); // Use logger
-		System.out.println("          KT" + id + " Calculating Split/Flip for Constrained 1 edge " + c_idx);
+		LOGGER.debug("          KT" + id + " Calculating Split/Flip for Constrained 1 edge " + c_idx);
 
 		boolean anyReflex = false;
 		for (int i = 0; i < 3; i++) {
@@ -1228,7 +1230,7 @@ public class KineticTriangle {
 		}
 		if (!anyReflex) {
 			// log.debug(" All vertices convex, returning NEVER.", id); // Use logger
-			System.out.println("            All vertices convex, returning NEVER.");
+			LOGGER.debug("            All vertices convex, returning NEVER.");
 			return eventThatWillNotHappen(currentTime, determinant);
 		}
 
@@ -1242,7 +1244,7 @@ public class KineticTriangle {
 		final VertexOnSupportingLineResult hitResult = getTimeVertexOnSupportingLine(vOpposite, line);
 		// log.debug(" Vertex V{} hits supporting line of Edge {}: {}", id,
 		// vOpposite.id, edge.id, hitResult); // Use logger
-		System.out.println("            Vertex V" + vOpposite.id + " hits supporting line of Edge " + edge.id + ": " + hitResult);
+		LOGGER.debug("            Vertex V" + vOpposite.id + " hits supporting line of Edge " + edge.id + ": " + hitResult);
 
 		switch (hitResult.type) {
 			case ONCE :
@@ -1250,7 +1252,7 @@ public class KineticTriangle {
 				if (hitTime >= currentTime - SurfConstants.ZERO_NT) { // Hit is now or future
 					if (Math.abs(hitTime - currentTime) < SurfConstants.ZERO_NT) { // Hit is now
 						// log.debug(" Hit time is now.", id); // Use logger
-						System.out.println("            Hit time is now.");
+						LOGGER.debug("            Hit time is now.");
 						// Check if shrinking (using acceptCollapse logic without edge flag)
 						boolean shrinkingOrStagnant = false;
 						if (determinant.getDegree() == 2) {
@@ -1264,32 +1266,32 @@ public class KineticTriangle {
 						if (shrinkingOrStagnant) {
 							// log.debug(" Triangle shrinking/stagnant now -> SPLIT_OR_FLIP_REFINE @ {}",
 							// id, currentTime); // Use logger
-							System.out.println("            Triangle shrinking/stagnant now -> SPLIT_OR_FLIP_REFINE @ " + currentTime);
+							LOGGER.debug("            Triangle shrinking/stagnant now -> SPLIT_OR_FLIP_REFINE @ " + currentTime);
 							return new CollapseSpec(CollapseType.SPLIT_OR_FLIP_REFINE, currentTime, this, c_idx);
 						} else {
 							// log.debug(" Triangle expanding now -> NEVER", id); // Use logger
-							System.out.println("            Triangle expanding now -> NEVER");
+							LOGGER.debug("            Triangle expanding now -> NEVER");
 							return eventThatWillNotHappen(currentTime, determinant);
 						}
 					} else { // Hit is strictly future
 						// log.debug(" Hit time is in the future -> SPLIT_OR_FLIP_REFINE @ {}", id,
 						// hitTime); // Use logger
-						System.out.println("            Hit time is in the future -> SPLIT_OR_FLIP_REFINE @ " + hitTime);
+						LOGGER.debug("            Hit time is in the future -> SPLIT_OR_FLIP_REFINE @ " + hitTime);
 						return new CollapseSpec(CollapseType.SPLIT_OR_FLIP_REFINE, hitTime, this, c_idx);
 					}
 				} else { // hitTime < currentTime (past)
 					// log.debug(" Hit time is in the past -> NEVER", id); // Use logger
-					System.out.println("            Hit time is in the past -> NEVER");
+					LOGGER.debug("            Hit time is in the past -> NEVER");
 					return eventThatWillNotHappen(currentTime, determinant);
 				}
 			case ALWAYS :
 				// log.debug(" Vertex always on line -> SPLIT_OR_FLIP_REFINE @ {}", id,
 				// currentTime); // Use logger
-				System.out.println("            Vertex always on line -> SPLIT_OR_FLIP_REFINE @ " + currentTime);
+				LOGGER.debug("            Vertex always on line -> SPLIT_OR_FLIP_REFINE @ " + currentTime);
 				return new CollapseSpec(CollapseType.SPLIT_OR_FLIP_REFINE, currentTime, this, c_idx);
 			case NEVER :
 				// log.debug(" Vertex never hits line -> NEVER", id); // Use logger
-				System.out.println("            Vertex never hits line -> NEVER");
+				LOGGER.debug("            Vertex never hits line -> NEVER");
 				return new CollapseSpec(CollapseType.NEVER, currentTime, this, c_idx);
 //				return eventThatWillNotHappen(currentTime, determinant); // NOTE
 			default :
@@ -1299,7 +1301,7 @@ public class KineticTriangle {
 
 	private CollapseSpec calculateFlipEvent(double currentTime, Polynomial determinant) {
 		// log.debug(" KT{} Calculating Flip/Spoke Event", id); // Use logger
-		System.out.println("        KT" + id + " Calculating Flip/Spoke Event");
+		LOGGER.debug("        KT" + id + " Calculating Flip/Spoke Event");
 
 		boolean potentiallyCouldFlip = false;
 		for (int i = 0; i < 3; i++) {
@@ -1311,13 +1313,13 @@ public class KineticTriangle {
 		if (!potentiallyCouldFlip) {
 			// log.debug(" No reflex/straight vertices, cannot flip. Returning NEVER.", id);
 			// // Use logger
-			System.out.println("          No reflex/straight vertices, cannot flip. Returning NEVER.");
+			LOGGER.debug("          No reflex/straight vertices, cannot flip. Returning NEVER.");
 			return eventThatWillNotHappen(currentTime, determinant);
 		}
 
 		CollapseSpec genericCollapse = getGenericCollapse(currentTime, determinant);
 		// log.debug(" Generic collapse result: {}", id, genericCollapse); // Use logger
-		System.out.println("          Generic collapse result: " + genericCollapse);
+		LOGGER.debug("          Generic collapse result: " + genericCollapse);
 
 		switch (genericCollapse.getType()) {
 			case NEVER :
@@ -1326,7 +1328,7 @@ public class KineticTriangle {
 			case SPOKE_COLLAPSE :
 				// log.info(" Flip calculation resulted in Triangle/Spoke collapse: {}",
 				// genericCollapse); // Use info level?
-				System.out.println("          Flip calculation resulted in Triangle/Spoke collapse: " + genericCollapse);
+				LOGGER.debug("          Flip calculation resulted in Triangle/Spoke collapse: " + genericCollapse);
 				return genericCollapse;
 
 			case VERTEX_MOVES_OVER_SPOKE :
@@ -1339,20 +1341,20 @@ public class KineticTriangle {
 				if (movingVertex.isReflexOrStraight()) {
 					// log.debug(" Reflex vertex V{} moves over spoke edge opposite index {}. Valid
 					// flip/spoke event.", id, movingVertex.id, movingVertexIndex); // Use logger
-					System.out.println("          Reflex vertex V" + movingVertex.id + " moves over spoke edge opposite index " + movingVertexIndex
+					LOGGER.debug("          Reflex vertex V" + movingVertex.id + " moves over spoke edge opposite index " + movingVertexIndex
 							+ ". Valid flip/spoke event.");
 					return genericCollapse;
 				} else {
 					// log.debug(" Convex vertex V{} would move over spoke edge opposite index {}.
 					// Invalidating event -> NEVER.", id, movingVertex.id, movingVertexIndex); //
 					// Use logger
-					System.out.println("          Convex vertex V" + movingVertex.id + " would move over spoke edge opposite index " + movingVertexIndex
+					LOGGER.debug("          Convex vertex V" + movingVertex.id + " would move over spoke edge opposite index " + movingVertexIndex
 							+ ". Invalidating event -> NEVER.");
 					return eventThatWillNotHappen(currentTime, determinant);
 				}
 
 			default :
-				System.err.println("Error: Unexpected type " + genericCollapse.getType() + " from getGenericCollapse in calculateFlipEvent for " + getName());
+				LOGGER.error("Unexpected type " + genericCollapse.getType() + " from getGenericCollapse in calculateFlipEvent for " + getName());
 				System.exit(1); // abort!
 				return null;
 		}
@@ -1361,18 +1363,18 @@ public class KineticTriangle {
 	private CollapseSpec getGenericCollapse(double currentTime, Polynomial determinant) {
 		// log.debug(" KT{} Calculating Generic Collapse (for Flip/Spoke)", id); // Use
 		// logger
-		System.out.println("          KT" + id + " Calculating Generic Collapse (for Flip/Spoke)");
+		LOGGER.debug("          KT" + id + " Calculating Generic Collapse (for Flip/Spoke)");
 		Optional<Double> collapseTimeOpt = getGenericCollapseTime(currentTime, determinant);
 
 		if (!collapseTimeOpt.isPresent()) {
 			// log.debug(" No generic collapse time found -> NEVER.", id); // Use logger
-			System.out.println("            No generic collapse time found -> NEVER.");
+			LOGGER.debug("            No generic collapse time found -> NEVER.");
 			return CollapseSpec.NEVER;
 		}
 
 		final double collapseTime = collapseTimeOpt.get();
 		// log.debug(" Generic collapse time: {}", id, collapseTime); // Use logger
-		System.out.println("            Generic collapse time: " + collapseTime);
+		LOGGER.debug("            Generic collapse time: {}", collapseTime);
 
 		// Calculate squared lengths of edges at collapse time
 		final Coordinate p0 = vertices[0].getPositionAt(collapseTime);
@@ -1386,7 +1388,7 @@ public class KineticTriangle {
 		final double[] sqLengths = { sqLen0, sqLen1, sqLen2 };
 		// log.debug(" SqLengths at collapse: {}", id, Arrays.toString(sqLengths)); //
 		// Use logger
-		System.out.println("            SqLengths at collapse: [" + sqLen0 + ", " + sqLen1 + ", " + sqLen2 + "]");
+		LOGGER.debug("            SqLengths at collapse: [" + sqLen0 + ", " + sqLen1 + ", " + sqLen2 + "]");
 
 		int zeroCount = 0;
 		int firstZeroIndex = -1; // Index of the *edge* opposite the vertex index
@@ -1414,42 +1416,41 @@ public class KineticTriangle {
 				isZero[thirdIndex] = true;
 				zeroCount = 3;
 				// log.debug(" Zero count corrected from 2 to 3.", id); // Use logger
-				System.out.println("            Zero count corrected from 2 to 3.");
+				LOGGER.debug("            Zero count corrected from 2 to 3.");
 			} else {
-				System.err.println(
-						"Warning: Exactly 2 edges have zero length at generic collapse time " + collapseTime + " for KT" + id + ". Treating as full collapse.");
+				LOGGER.warn("Exactly 2 edges have zero length at generic collapse time " + collapseTime + " for KT" + id + ". Treating as full collapse.");
 				zeroCount = 3;
 			}
 		}
 
 		if (zeroCount == 3) {
 			// log.debug(" All edges zero -> TRIANGLE_COLLAPSE", id); // Use logger
-			System.out.println("            All edges zero -> TRIANGLE_COLLAPSE");
+			LOGGER.debug("            All edges zero -> TRIANGLE_COLLAPSE");
 			return new CollapseSpec(CollapseType.TRIANGLE_COLLAPSE, collapseTime, this);
 		} else if (zeroCount == 1) {
 			// log.debug(" One edge ({}) zero -> SPOKE_COLLAPSE", id, firstZeroIndex); //
 			// Use logger
-			System.out.println("            One edge (" + firstZeroIndex + ") zero -> SPOKE_COLLAPSE");
+			LOGGER.debug("            One edge (" + firstZeroIndex + ") zero -> SPOKE_COLLAPSE");
 			// Optional: Check other two lengths are equal within tolerance
 			// double lenA = sqLengths[(firstZeroIndex + 1) % 3];
 			// double lenB = sqLengths[(firstZeroIndex + 2) % 3];
 			// if (Math.abs(lenA - lenB) > SurfConstants.ZERO_AREA_SQ * 10) { // Use larger
 			// tolerance?
-			// System.err.println("Warning: Spoke collapse non-zero edges differ
+			// LOGGER.warn("Spoke collapse non-zero edges differ
 			// significantly for KT" + id);
 			// }
 			return new CollapseSpec(CollapseType.SPOKE_COLLAPSE, collapseTime, this, firstZeroIndex);
 		} else { // zeroCount == 0
 			// log.debug(" No edges zero. Vertices collinear -> VERTEX_MOVES_OVER_SPOKE",
 			// id); // Use logger
-			System.out.println("            No edges zero. Vertices collinear -> VERTEX_MOVES_OVER_SPOKE");
+			LOGGER.debug("            No edges zero. Vertices collinear -> VERTEX_MOVES_OVER_SPOKE");
 
 			ImmutableTriple<Integer, Integer, Integer> sortedIndices = indirectSort3(sqLengths);
 			int longestEdgeIndex = sortedIndices.getRight(); // Index of the longest edge
 			double longestSqLength = sqLengths[longestEdgeIndex];
 			// log.debug(" Longest edge index: {} (SqLen: {})", id, longestEdgeIndex,
 			// longestSqLength); // Use logger
-			System.out.println("            Longest edge index: " + longestEdgeIndex + " (SqLen: " + longestSqLength + ")");
+			LOGGER.debug("            Longest edge index: " + longestEdgeIndex + " (SqLen: " + longestSqLength + ")");
 
 			int relevantVertexIndex = longestEdgeIndex; // Vertex opposite longest edge moves over spoke
 			return new CollapseSpec(CollapseType.VERTEX_MOVES_OVER_SPOKE, collapseTime, this, relevantVertexIndex, longestSqLength);
@@ -1464,7 +1465,7 @@ public class KineticTriangle {
 		final Vector2D n = line.getNormalDirection();
 		final double nSqLen = n.lengthSquared();
 		if (nSqLen < SurfConstants.ZERO_NORM_SQ) {
-			System.err.println("Warning: Supporting line has near-zero normal vector: " + line + " in vertex-line time calc.");
+			LOGGER.warn("Supporting line has near-zero normal vector: " + line + " in vertex-line time calc.");
 			return new VertexOnSupportingLineResult(Double.NaN, VertexOnSupportingLineType.NEVER);
 		}
 		final double nLen = Math.sqrt(nSqLen);
@@ -1488,11 +1489,11 @@ public class KineticTriangle {
 		// log.debug(" n={}, P0={}, Q0={}, s={}, w={}", n, P0, Q0, s, w); // Use logger
 		// log.debug(" PQ={}, ScaledDist (num)={}, ScaledSpeedApproach (den)={}", PQ,
 		// scaledDistance, scaledSpeedApproach); // Use logger
-		System.out.println("          TimeVertexOnLine: V" + v.id + " vs Line (" + line.getSegment().p0 + "->" + line.getSegment().p1 + ")");
-		System.out.println("            n=" + n + ", P0=" + P0 + ", Q0=" + Q0 + ", s=" + s + ", w=" + w);
-		System.out.println("            PQ=" + PQ);
-		System.out.println("            ScaledDist (num) = " + scaledDistance);
-		System.out.println("            ScaledSpeedApproach (den) = " + scaledSpeedApproach);
+		LOGGER.debug("          TimeVertexOnLine: V" + v.id + " vs Line (" + line.getSegment().p0 + "->" + line.getSegment().p1 + ")");
+		LOGGER.debug("            n=" + n + ", P0=" + P0 + ", Q0=" + Q0 + ", s=" + s + ", w=" + w);
+		LOGGER.debug("            PQ=" + PQ);
+		LOGGER.debug("            ScaledDist (num) = " + scaledDistance);
+		LOGGER.debug("            ScaledSpeedApproach (den) = " + scaledSpeedApproach);
 
 		double collapseTime;
 		VertexOnSupportingLineType type;
@@ -1504,19 +1505,19 @@ public class KineticTriangle {
 			// speed)
 			if (Math.abs(scaledDistance) < SurfConstants.ZERO_DIST * nLen) { // Scale tolerance by normal length?
 				// log.debug(" Speeds equal, distance zero -> ALWAYS"); // Use logger
-				System.out.println("            Speeds equal, distance zero -> ALWAYS");
+				LOGGER.debug("            Speeds equal, distance zero -> ALWAYS");
 				type = VertexOnSupportingLineType.ALWAYS;
 				collapseTime = 0.0;
 			} else {
 				// log.debug(" Speeds equal, distance non-zero -> NEVER"); // Use logger
-				System.out.println("            Speeds equal, distance non-zero -> NEVER");
+				LOGGER.debug("            Speeds equal, distance non-zero -> NEVER");
 				type = VertexOnSupportingLineType.NEVER;
 				collapseTime = Double.NaN;
 			}
 		} else {
 			collapseTime = scaledDistance / scaledSpeedApproach;
 			// log.debug(" Speeds differ -> ONCE @ {}", collapseTime); // Use logger
-			System.out.println("            Speeds differ -> ONCE @ " + collapseTime);
+			LOGGER.debug("            Speeds differ -> ONCE @ " + collapseTime);
 			type = VertexOnSupportingLineType.ONCE;
 		}
 		return new VertexOnSupportingLineResult(collapseTime, type);
@@ -1530,7 +1531,7 @@ public class KineticTriangle {
 		final Vector2D n = line.getNormalDirection();
 		final double nSqLen = n.lengthSquared();
 		if (nSqLen < SurfConstants.ZERO_NORM_SQ) {
-			System.err.println("Warning: Supporting line has near-zero normal vector in speed comparison: " + line);
+			LOGGER.warn("Supporting line has near-zero normal vector in speed comparison: " + line);
 			return Sign.ZERO;
 		}
 		final double nLen = Math.sqrt(nSqLen);
@@ -1546,8 +1547,8 @@ public class KineticTriangle {
 		// line.getSegment()); // Use logger
 		// log.debug(" ScaledEdgeSpeed={}, ScaledVertexSpeed={}, Diff={}",
 		// scaledEdgeSpeed, scaledVertexSpeed, diff); // Use logger
-		System.out.println("          EdgeFasterThanVertex: V" + v.id + " vs Line (" + line.getSegment().p0 + "->" + line.getSegment().p1 + ")");
-		System.out.println("            ScaledEdgeSpeed=" + scaledEdgeSpeed + ", ScaledVertexSpeed=" + scaledVertexSpeed + ", Diff=" + diff);
+		LOGGER.debug("          EdgeFasterThanVertex: V" + v.id + " vs Line (" + line.getSegment().p0 + "->" + line.getSegment().p1 + ")");
+		LOGGER.debug("            ScaledEdgeSpeed=" + scaledEdgeSpeed + ", ScaledVertexSpeed=" + scaledVertexSpeed + ", Diff=" + diff);
 
 		// Use tolerance for comparison
 		if (Math.abs(diff) < SurfConstants.ZERO_SPEED) {
@@ -1596,8 +1597,8 @@ public class KineticTriangle {
 		// log.debug("Moving constraint Edge {} from dying {}(edge {}) to {}(edge {})",
 		// edgeToMove.id, sourceTriangle.getName(), sourceEdgeIndex, getName(),
 		// targetEdgeIndex); // Use logger
-		System.out.println("Moving constraint Edge " + edgeToMove.id + " from dying " + sourceTriangle.getName() + "(edge " + sourceEdgeIndex + ") to "
-				+ getName() + "(edge " + targetEdgeIndex + ")");
+		LOGGER.debug("Moving constraint Edge " + edgeToMove.id + " from dying " + sourceTriangle.getName() + "(edge " + sourceEdgeIndex + ") to " + getName()
+				+ "(edge " + targetEdgeIndex + ")");
 
 		// 1. Update this triangle's links
 		this.neighbors[targetEdgeIndex] = null;
@@ -1643,7 +1644,7 @@ public class KineticTriangle {
 
 		// log.debug("Flipping edge between {} (idx {}) and {} (idx {})", getName(),
 		// edgeIndex, n.getName(), nEdgeIndex); // Use logger
-		System.out.println("Flipping edge between " + getName() + " (idx " + edgeIndex + ") and " + n.getName() + " (idx " + nEdgeIndex + ")");
+		LOGGER.debug("Flipping edge between " + getName() + " (idx " + edgeIndex + ") and " + n.getName() + " (idx " + nEdgeIndex + ")");
 
 		final WavefrontVertex v_idx = this.getVertex(edgeIndex);
 		final WavefrontVertex v_ccw = this.getVertex(ccw(edgeIndex));
@@ -1731,7 +1732,7 @@ public class KineticTriangle {
 		// if (nn_ccw_orig != null) nn_ccw_orig.assertValid();
 
 		// log.debug("Flip complete."); // Use logger
-		System.out.println("Flip complete.");
+		LOGGER.debug("Flip complete.");
 	}
 
 	// --- Validation ---
