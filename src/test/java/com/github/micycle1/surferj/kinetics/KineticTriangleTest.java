@@ -2,6 +2,7 @@ package com.github.micycle1.surferj.kinetics;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -16,6 +17,7 @@ import com.github.micycle1.surferj.kinetics.KineticTriangle.Sign;
 import com.github.micycle1.surferj.kinetics.KineticTriangle.VertexOnSupportingLineResult;
 import com.github.micycle1.surferj.kinetics.KineticTriangle.VertexOnSupportingLineType;
 import com.github.micycle1.surferj.kinetics.WavefrontVertex.InfiniteSpeedType;
+import com.github.micycle1.surferj.kinetics.WavefrontVertex.VertexAngle;
 import com.github.micycle1.surferj.SurfConstants;
 
 import org.locationtech.jts.math.Vector2D;
@@ -33,14 +35,6 @@ class KineticTriangleTest {
 
 	@BeforeEach
 	void setUp() {
-		// Ensure SurfConstants tolerances are reasonable
-		if (SurfConstants.ZERO_SPEED <= 0 || SurfConstants.ZERO_DIST <= 0 || SurfConstants.ZERO_NT <= 0) {
-			System.err.println("Warning: SurfConstants tolerances are not positive!");
-		}
-		if (SurfConstants.ZERO_SPEED > 1e-3) { // Check if potentially too large
-			System.err.println("Warning: SurfConstants.ZERO_SPEED might be too large: " + SurfConstants.ZERO_SPEED);
-		}
-
 		vOrigin = createVertex(0, 0, 0, 0); // Static origin
 		vX1 = createVertex(1, 0, 0, 0); // Static at (1,0)
 		vY1 = createVertex(0, 1, 0, 0); // Static at (0,1)
@@ -49,13 +43,13 @@ class KineticTriangleTest {
 
 	// --- Helper Methods ---
 
-	private WavefrontVertex createVertex(double x, double y, double vx, double vy) {
+	private static WavefrontVertex createVertex(double x, double y, double vx, double vy) {
 		return new WavefrontVertex(x, y, vx, vy);
 	}
 
 	// Helper to create an edge and ensure vertices are linked correctly from the
 	// start
-	private WavefrontEdge createEdge(WavefrontVertex v0, WavefrontVertex v1, double weight) {
+	private static WavefrontEdge createEdge(WavefrontVertex v0, WavefrontVertex v1, double weight) {
 		if (v0 == null || v1 == null)
 			throw new NullPointerException("Cannot create edge with null vertex");
 		LineSegment seg = new LineSegment(v0.getInitialPosition(), v1.getInitialPosition());
@@ -66,7 +60,7 @@ class KineticTriangleTest {
 	}
 
 	// Helper to link triangles, ensuring vertex consistency
-	private void linkTriangles(KineticTriangle t1, int edgeIdx1, KineticTriangle t2, int edgeIdx2) {
+	private static void linkTriangles(KineticTriangle t1, int edgeIdx1, KineticTriangle t2, int edgeIdx2) {
 		if (t1 == null || t2 == null)
 			throw new NullPointerException("Cannot link null triangle");
 
@@ -93,7 +87,7 @@ class KineticTriangleTest {
 
 	// Helper to create placeholder triangles with necessary vertices for linking
 	// tests
-	private KineticTriangle createPlaceholderTriangle(WavefrontVertex v0, WavefrontVertex v1, WavefrontVertex v2) {
+	private static KineticTriangle createPlaceholderTriangle(WavefrontVertex v0, WavefrontVertex v1, WavefrontVertex v2) {
 		KineticTriangle kt = new KineticTriangle(DEFAULT_COMPONENT);
 		kt.setVertex(0, v0);
 		kt.setVertex(1, v1);
@@ -185,32 +179,43 @@ class KineticTriangleTest {
 	void testSetNeighborAndWavefront() {
 		KineticTriangle kt1 = new KineticTriangle(DEFAULT_COMPONENT);
 		KineticTriangle kt2 = new KineticTriangle(DEFAULT_COMPONENT);
+		// Create dummy vertices for the edge if they weren't defined elsewhere
+		WavefrontVertex vOrigin = createVertex(0, 0, 0, 0); // Assuming helper exists
+		WavefrontVertex vX1 = createVertex(1, 0, 0, 0); // Assuming helper exists
 		WavefrontEdge edge = createEdge(vOrigin, vX1, 1.0);
 
-		// Set neighbor
+		// --- Test Setting Neighbor ---
 		kt1.setNeighborRaw(0, kt2);
 		assertEquals(kt2, kt1.getNeighbor(0));
 		assertNull(kt1.getWavefront(0));
 		assertFalse(kt1.isConstrained(0));
 
-		// Set wavefront, should remove neighbor
+		// --- Test Setting Wavefront (Clearing Neighbor First) ---
+		// Explicitly clear the neighbor before setting the wavefront
+		kt1.setNeighborRaw(0, null);
+		assertNull(kt1.getNeighbor(0), "Neighbor should be null before setting wavefront");
+
+		// Now, setting the wavefront should succeed
 		kt1.setWavefront(0, edge);
 		assertEquals(edge, kt1.getWavefront(0));
-		assertNull(kt1.getNeighbor(0));
+		assertNull(kt1.getNeighbor(0)); // Should still be null
 		assertTrue(kt1.isConstrained(0));
 		assertEquals(kt1, edge.getIncidentTriangle()); // Check edge points back
 
-		// Cannot set neighbor on constrained edge
+		// --- Test Exception: Cannot set neighbor on constrained edge ---
 		assertThrows(IllegalStateException.class, () -> kt1.setNeighborRaw(0, kt2), "Should throw when setting neighbor on constrained edge");
 
-		// Set neighbor again after removing constraint
+		// --- Test Setting Neighbor Again ---
 		kt1.setWavefront(0, null); // Unconstrain
+		assertNull(kt1.getWavefront(0)); // Verify wavefront is cleared
 		assertFalse(kt1.isConstrained(0));
-		kt1.setNeighborRaw(0, kt2); // Set neighbor
+
+		kt1.setNeighborRaw(0, kt2); // Set neighbor again, should succeed
 		assertEquals(kt2, kt1.getNeighbor(0));
 		assertNull(kt1.getWavefront(0));
+		assertFalse(kt1.isConstrained(0)); // Should not be constrained
 
-		// Cannot set wavefront on neighbor edge
+		// --- Test Exception: Cannot set wavefront on neighbor edge ---
 		assertThrows(IllegalStateException.class, () -> kt1.setWavefront(0, edge), "Should throw when setting wavefront on neighbor edge");
 	}
 
@@ -738,37 +743,111 @@ class KineticTriangleTest {
 	}
 
 	/**
+	 * 
 	 * This test aims to create a situation where a geometric flip event would occur
 	 * (vertex v0 moving towards the line v1-v2), but it should be rejected because
 	 * v0 is geometrically convex (a LEFT_TURN in the wavefront context).
 	 */
 	@Test
-	void testCalculateCollapse_VertexMovesOverSpoke_RejectedNonReflex() {
-		WavefrontVertex v0 = createVertex(0, 1, 0, -1); // Moves down
-		WavefrontVertex v1 = createVertex(-1, 0, 0, 0); // Static
-		WavefrontVertex v2 = createVertex(1, 0, 0, 0); // Static
+	void testCalculateCollapse_VertexMovesOverSpoke_RejectedNonReflex_Setup1() {
+		// --- Geometry Setup ---
+		// v0 starts above the baseline (y=0) and moves straight down.
+		// v1, v2 form the static baseline. This setup results in LEFT_TURN at v0.
+		WavefrontVertex v0 = createVertex(0, 1, 0, -1); // WV5 - Moves down
+		WavefrontVertex v1 = createVertex(-1, 0, 0, 0); // WV6 - Static (Left)
+		WavefrontVertex v2 = createVertex(1, 0, 0, 0); // WV7 - Static (Right)
 
-		// Ensure incident edges make v0 compute as convex (LEFT_TURN)
-		// Edge CW (v0-v1): Line through (0,1) and (-1,0).
-		// Edge CCW (v2-v0): Line through (1,0) and (0,1).
-		// The angle between these should naturally be convex unless geometry is
-		// degenerate.
-		WavefrontEdge edge_v0v1 = createEdge(v0, v1, 1.0);
+		// Create edges ensuring correct CCW order linkage around v0:
+		// edge0 (incoming): v2 -> v0
+		// edge1 (outgoing): v0 -> v1
+		// The createEdge helper calls setVerticesAndUpdateAdj which handles linking.
 		WavefrontEdge edge_v2v0 = createEdge(v2, v0, 1.0);
+		WavefrontEdge edge_v0v1 = createEdge(v0, v1, 1.0);
 
-		// Link edges to v0 (should be done by createEdge)
-		// v0.setIncidentEdge(0, edge_v2v0); // CCW
-		// v0.setIncidentEdge(1, edge_v0v1); // CW
+		// --- Verification of State Before Calculation ---
+		assertNotNull(v0.getIncidentEdge(0), "v0.edge0 should be linked");
+		assertEquals(edge_v2v0.id, v0.getIncidentEdge(0).id, "v0.edge0 should be edge_v2v0");
+		assertNotNull(v0.getIncidentEdge(1), "v0.edge1 should be linked");
+		assertEquals(edge_v0v1.id, v0.getIncidentEdge(1).id, "v0.edge1 should be edge_v0v1");
 
-		// Verify v0 is convex
-		assertFalse(v0.isReflexOrStraight(), "Vertex v0 should calculate as convex (LEFT_TURN)");
+		// --- Angle Calculation ---
+		v0.recalculateGeometry(); // Uses linked edge0 and edge1
 
+		// --- Assert Correct Angle ---
+		// We expect LEFT_TURN based on Orientation.index(v2=(1,0), v0=(0,1), v1=(-1,0))
+		// -> COUNTERCLOCKWISE
+		assertEquals(WavefrontVertex.VertexAngle.LEFT_TURN, v0.getAngle(), "Vertex v0 angle should be LEFT_TURN (Convex)");
+		assertFalse(v0.isReflexOrStraight(), "Vertex v0 should calculate as convex (NonReflex)");
+
+		// --- Collapse Calculation ---
 		KineticTriangle kt = new KineticTriangle(DEFAULT_COMPONENT, v0, v1, v2);
+		// Assuming 0-constraint triangle, proceeds to calculateFlipEvent
 
 		CollapseSpec spec = kt.calculateCollapseSpec(0.0);
 
-		// Flip event should be rejected because v0 is convex
-		assertEquals(CollapseType.NEVER, spec.getType(), "Flip should be rejected for convex vertex");
+		// --- Assert Correct Collapse Event Rejection ---
+		// Expected: v0 becomes collinear with v1 and v2 at t=1.
+		// calculateFlipEvent should find the potential spoke event via
+		// getGenericCollapse.
+		// BUT, it should then check v0.isReflexOrStraight(), find it false (because
+		// angle is LEFT_TURN),
+		// and return CollapseSpec.NEVER.
+		assertEquals(CollapseType.NEVER, spec.getType(), "Spoke event should be REJECTED for convex vertex");
+	}
+
+	/**
+	 * This test uses a geometry where vertex v0 moves towards the line v1-v2. The
+	 * calculation Orientation.index(v2, v0, v1) results in CLOCKWISE, therefore v0
+	 * is correctly calculated as concave (RIGHT_TURN / Reflex). This test verifies
+	 * that the potential spoke event is ALLOWED for this reflex vertex, resulting
+	 * in CollapseType.VERTEX_MOVES_OVER_SPOKE at t=1.0.
+	 */
+	@Test
+	void testCalculateCollapse_VertexMovesOverSpoke_AllowedReflex_Setup2() {
+		// --- Geometry Setup ---
+		// v0 starts below the baseline (y=0) and moves straight up.
+		// v1, v2 form the static baseline. This setup results in RIGHT_TURN at v0.
+		WavefrontVertex v0 = createVertex(0, -1, 0, 1); // WV15 - Moves up
+		WavefrontVertex v1 = createVertex(-1, 0, 0, 0); // WV16 - Static (Left)
+		WavefrontVertex v2 = createVertex(1, 0, 0, 0); // WV17 - Static (Right)
+
+		// Create edges ensuring correct CCW order linkage around v0:
+		// edge0 (incoming): v2 -> v0
+		// edge1 (outgoing): v0 -> v1
+		WavefrontEdge edge_v2v0 = createEdge(v2, v0, 1.0);
+		WavefrontEdge edge_v0v1 = createEdge(v0, v1, 1.0);
+
+		// --- Verification of State Before Calculation ---
+		assertNotNull(v0.getIncidentEdge(0), "v0.edge0 should be linked");
+		assertEquals(edge_v2v0.id, v0.getIncidentEdge(0).id, "v0.edge0 should be edge_v2v0");
+		assertNotNull(v0.getIncidentEdge(1), "v0.edge1 should be linked");
+		assertEquals(edge_v0v1.id, v0.getIncidentEdge(1).id, "v0.edge1 should be edge_v0v1");
+
+		// --- Collapse Calculation ---
+		KineticTriangle kt = new KineticTriangle(DEFAULT_COMPONENT, v0, v1, v2);
+		// Assuming 0-constraint triangle, proceeds to calculateFlipEvent
+
+		CollapseSpec spec = kt.calculateCollapseSpec(0.0);
+
+		// --- Assert Correct Collapse Event ---
+		// Expected: v0 becomes collinear with v1 and v2 at t=1.
+		// calculateFlipEvent -> getGenericCollapse should identify the potential event.
+		// Since v0.isReflexOrStraight() is true, the event should be allowed.
+		assertEquals(CollapseType.VERTEX_MOVES_OVER_SPOKE, spec.getType(), "Spoke event should be ALLOWED for reflex vertex");
+		assertEquals(1.0, spec.getTime(), DELTA, "Spoke event should occur at t=1.0 when v0 hits the baseline");
+		// Optional: Check relevantEdgeIndex. It's the index of the vertex moving over
+		// the spoke (v0), which is 0.
+		assertEquals(0, spec.getRelevantEdge(), "Relevant edge index should be 0 (opposite v0)");
+
+		// --- Angle Calculation ---
+		// do this after calculateCollapseSpec(), since velocity gets changed!
+		v0.recalculateGeometry(); // Uses linked edge0 and edge1
+
+		// --- Assert Correct Angle ---
+		// We expect RIGHT_TURN based on Orientation.index(v2=(1,0), v0=(0,-1),
+		// v1=(-1,0)) -> CLOCKWISE
+		assertEquals(WavefrontVertex.VertexAngle.RIGHT_TURN, v0.getAngle(), "Vertex v0 angle should be RIGHT_TURN (Reflex)");
+		assertTrue(v0.isReflexOrStraight(), "Vertex v0 should calculate as reflex or straight");
 	}
 
 	/**

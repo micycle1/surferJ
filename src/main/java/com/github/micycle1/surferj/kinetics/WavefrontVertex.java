@@ -153,40 +153,7 @@ public class WavefrontVertex {
 		this.edge1 = edge1;
 
 		// Now recalculate geometry based on the stored edges
-		// Use a try-catch block for robustness during calculations
-		try {
-			if (this.edge0 != null && this.edge1 != null) {
-				// --- Optional: Perform Sanity Checks ---
-				// Check if edges actually contain this vertex at the correct ends
-				// (This helps catch logical errors in how edges are passed)
-				if (!checkEdgeConsistency()) {
-					// Log error and set defaults if consistency check fails
-					System.err.println("Error: Edge consistency check failed for V" + id + ". Setting default geometry.");
-					setDefaultGeometry();
-					return; // Exit after setting defaults
-				}
-				// --- End Sanity Checks ---
-
-				// Calculate geometric properties using helper methods
-				calculateAngle(); // Calculates and sets this.angle
-				calculateInfiniteSpeedType(); // Calculates and sets this.infiniteSpeed (needs this.angle)
-				calculateVelocity(); // Calculates and sets this.velocity (needs this.angle, this.infiniteSpeed)
-
-				// Optional: Log calculated values
-				// System.out.println("V" + id + " geometry calculated: Angle=" + this.angle
-				// + ", Speed=" + this.infiniteSpeed + ", Vel=" + this.velocity);
-
-			} else {
-				// One or both edges are null, set default geometry
-				setDefaultGeometry();
-			}
-		} catch (Exception e) {
-			// Catch potential errors during calculation (e.g., null pointers if checks
-			// fail, math errors)
-			System.err.println("Error during setIncidentEdges geometry calculation for V" + id + ": " + e.getMessage());
-			e.printStackTrace(); // Or log properly
-			setDefaultGeometry(); // Fallback to safe defaults on error
-		}
+		recalculateGeometry();
 	}
 
 	public Coordinate getVelocity() {
@@ -399,14 +366,25 @@ public class WavefrontVertex {
 	 * version since edges are created first. In Java version, edges can be created
 	 * afterwards.
 	 */
-	 public void recalculateGeometry() {
-		// NOTE does this duplicate code?
+	public void recalculateGeometry() {
 		// Check if both edges are now known
 		if (this.edge0 != null && this.edge1 != null) {
 			// --- Logic copied/moved from the original setIncidentEdges(e0, e1) ---
 			try { // Add try-catch for robustness during calculation
-					// Step 1: Compute angle between edge directions
-					// **** Use NORMAL DIRECTION consistently ****
+
+				// --- Optional: Perform Sanity Checks ---
+				// Check if edges actually contain this vertex at the correct ends
+				// (This helps catch logical errors in how edges are passed)
+				if (!checkEdgeConsistency()) {
+					// Log error and set defaults if consistency check fails
+					System.err.println("Error: Edge consistency check failed for V" + id + ". Setting default geometry.");
+					setDefaultGeometry();
+					return; // Exit after setting defaults
+				}
+				// --- End Sanity Checks ---
+
+				// Step 1: Compute angle between edge directions
+				// **** Use NORMAL DIRECTION consistently ****
 				Vector2D dir0 = this.edge0.getSupportingLine().getNormalDirection();
 				Vector2D dir1 = this.edge1.getSupportingLine().getNormalDirection();
 
@@ -417,22 +395,10 @@ public class WavefrontVertex {
 					return;
 				}
 
-				final double det = dir0.getX() * dir1.getY() - dir0.getY() * dir1.getX();
-				if (det > SurfConstants.ZERO_DET) { // Use tolerance
-					this.angle = VertexAngle.LEFT_TURN;
-				} else if (det < -SurfConstants.ZERO_DET) { // Use tolerance
-					this.angle = VertexAngle.RIGHT_TURN;
-				} else {
-					this.angle = VertexAngle.COLLINEAR;
-				}
-
-				// Step 2: Determine infinite speed type (if applicable)
-				// ... (use this.edge0, this.edge1) ...
-				calculateInfiniteSpeedType(); // Extracted to helper?
-
-				// Step 3: Compute velocity (if applicable)
-				// ... (use this.edge0, this.edge1) ...
-				calculateVelocity(); // Extracted to helper?
+				// Calculate geometric properties using helper methods
+				calculateAngle(); // Calculates and sets this.angle
+				calculateInfiniteSpeedType(); // Calculates and sets this.infiniteSpeed (needs this.angle)
+				calculateVelocity(); // Calculates and sets this.velocity (needs this.angle, this.infiniteSpeed)
 
 			} catch (Exception e) {
 				System.err.println("Error during geometry recalculation for V" + id + ": " + e.getMessage());
@@ -533,6 +499,7 @@ public class WavefrontVertex {
 					this.angle = VertexAngle.COLLINEAR; // Default on unexpected result
 					break;
 			}
+//			System.out.printf("wfv%s: %s %s (%s)\n", id, edge0.toString(), edge1.toString(), angle);
 		} catch (Exception e) {
 			System.err.println("Error during JTS Orientation calculation for V" + id + ": " + e.getMessage());
 			e.printStackTrace();
@@ -598,8 +565,9 @@ public class WavefrontVertex {
 
 	@Override
 	public String toString() {
-		if (isInfinite)
+		if (isInfinite) {
 			return "WV(Inf)";
+		}
 		return "WV" + id + "(" + initialPosition.getX() + "," + initialPosition.getY() + ")";
 	}
 	// equals/hashCode based on ID for identity semantics if needed,

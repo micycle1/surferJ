@@ -297,59 +297,6 @@ public class WavefrontVertexTest2 {
 			assertEquals(2.0 + 4.0 * (-1.0), p_neg.getY(), DELTA); // -2.0
 		}
 
-//		@Test
-//		void testStopMethod() {
-//			assertFalse(v.hasStopped());
-//
-//			v.stop(5.0); // Stop at t=5.0
-//
-//			assertTrue(v.hasStopped());
-//			assertEquals(5.0, v.time_stop(), DELTA); // Assuming getter exists
-//
-//			Coordinate expectedStopPos = new Coordinate(1.0 + 3.0 * 5.0, 2.0 + 4.0 * 5.0); // (16, 22)
-//			assertEquals(expectedStopPos.getX(), v.pos_stop().getX(), DELTA, "Stop X mismatch"); // Assuming getter exists
-//			assertEquals(expectedStopPos.getY(), v.pos_stop().getY(), DELTA, "Stop Y mismatch"); // Assuming getter exists
-//
-//			// Check getPositionAt respects stop time (using p_at_draw logic assumption)
-//			Coordinate p4 = v.getPositionAt(4.0); // Before stop
-//			assertEquals(1.0 + 3.0 * 4.0, p4.getX(), DELTA); // 13.0
-//			assertEquals(2.0 + 4.0 * 4.0, p4.getY(), DELTA); // 18.0
-//
-//			Coordinate p5 = v.getPositionAt(5.0); // At stop
-//			assertEquals(expectedStopPos.getX(), p5.getX(), DELTA);
-//			assertEquals(expectedStopPos.getY(), p5.getY(), DELTA);
-//
-//			Coordinate p6 = v.getPositionAt(6.0); // After stop
-//			assertEquals(expectedStopPos.getX(), p6.getX(), DELTA, "Position after stop should be stop pos X");
-//			assertEquals(expectedStopPos.getY(), p6.getY(), DELTA, "Position after stop should be stop pos Y");
-//		}
-
-//		@Test
-//		void testStopMethodWithPosition() {
-//			assertFalse(v.hasStopped());
-//			Coordinate explicitStopPos = new Coordinate(100, 200);
-//			v.stop(3.0, explicitStopPos); // Stop at t=3.0 with specific position
-//
-//			assertTrue(v.hasStopped());
-//			assertEquals(3.0, v.time_stop(), DELTA);
-//			assertEquals(explicitStopPos.getX(), v.pos_stop().getX(), DELTA, "Stop X mismatch (explicit)");
-//			assertEquals(explicitStopPos.getY(), v.pos_stop().getY(), DELTA, "Stop Y mismatch (explicit)");
-//
-//			// Check getPositionAt respects stop time
-//			Coordinate p2 = v.getPositionAt(2.0); // Before stop
-//			assertEquals(1.0 + 3.0 * 2.0, p2.getX(), DELTA); // 7.0
-//			assertEquals(2.0 + 4.0 * 2.0, p2.getY(), DELTA); // 10.0
-//
-//			Coordinate p3 = v.getPositionAt(3.0); // At stop
-//			assertEquals(explicitStopPos.getX(), p3.getX(), DELTA);
-//			assertEquals(explicitStopPos.getY(), p3.getY(), DELTA);
-//
-//			Coordinate p4 = v.getPositionAt(4.0); // After stop
-//			assertEquals(explicitStopPos.getX(), p4.getX(), DELTA, "Position after stop should be stop pos X (explicit)");
-//			assertEquals(explicitStopPos.getY(), p4.getY(), DELTA, "Position after stop should be stop pos Y (explicit)");
-//		}
-//	}
-
 		@Nested
 		@DisplayName("Predicate Tests")
 		class PredicateTests {

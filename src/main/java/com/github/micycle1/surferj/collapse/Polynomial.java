@@ -60,6 +60,6 @@ public class Polynomial {
 
     @Override
     public String toString() {
-        return String.format("%.4fx^2 + %.4fx + %.4f (deg %d)", a, b, c, degree);
+        return String.format("%.4fx² + %.4fx + %.4f (deg %d)", a, b, c, degree);
     }
 }

@@ -684,6 +684,7 @@ public class KineticTriangle {
 		if (detNow < -SurfConstants.ZERO_AREA_SQ) {
 			System.err.println("Warning: Triangle " + getName() + " has negative area " + detNow + " at time " + currentTime + ". (triangle's orientation fipped earlier?)");
 			// Depending on strictness, could return INVALID or proceed cautiously.
+			// can be ok, if event occurred in past
 		}
 
 		if (wf.parallelEndpoints(currentTime)) {

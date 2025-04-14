@@ -45,7 +45,7 @@ public class KineticTriangulationTest {
 	}
 
 	private Polygon createDegeneratePoly() throws ParseException {
-		// Collinear points on boundary
+		// Square with collinear points on boundary
 		return (Polygon) reader.read("POLYGON ((0 0, 5 0, 10 0, 10 10, 0 10, 0 0))");
 	}
 
@@ -436,35 +436,46 @@ public class KineticTriangulationTest {
 		Polygon degeneratePoly = createDegeneratePoly();
 		KineticTriangulation kt = new KineticTriangulation(degeneratePoly, gf);
 
-		// Test the middle collinear vertex (5, 0)
+		// Test the middle collinear vertex (5, 0) on the bottom edge
 		WavefrontVertex v50 = findVertexAt(kt, 5, 0);
-		assertNotNull(v50);
+		assertNotNull(v50, "Could not find vertex at (5,0)");
 
-		// Expected Angle: Straight line segment
-		assertEquals(VertexAngle.COLLINEAR, v50.getAngle(), "Degenerate vertex (5,0) should be COLLINEAR");
+		// --- Expected Angle ---
+		// The vertex lies on the straight segment (0,0) -> (5,0) -> (10,0).
+		// Orientation.index((0,0), (5,0), (10,0)) should be COLLINEAR.
+		assertEquals(WavefrontVertex.VertexAngle.COLLINEAR, v50.getAngle(), "Vertex (5,0) angle should be COLLINEAR");
 
-		// Expected Speed: Depends on weights. Assuming default weight 1.0 for boundary
-		// edges.
-		// Edges (0,0)-(5,0) and (10,0)-(5,0) have same direction vector (when pointing
-		// away from vertex)
-		// but opposite normals relative to standard CCW traversal?
-		// Edge (0,0)->(5,0). Normal (0,-1).
-		// Edge (10,0)->(5,0). Normal (0,1).
-		// They are opposing. Weights are likely equal (default 1.0).
+		// --- Expected Infinite Speed ---
+		// Condition: angle == COLLINEAR. Check requires examining normals and weights.
+		// edge0: Corresponds to incoming segment (0,0)->(5,0). Left normal dir ~ (0,5).
+		// edge1: Corresponds to outgoing segment (5,0)->(10,0). Left normal dir ~
+		// (0,5). Unit normal ~ (0,1).
 		// Let's check the calculation in calculateInfiniteSpeedType:
 		// angle == COLLINEAR.
-		// normal1 = unit normal of edge1 = unit normal of (10,0)->(5,0) = (0,1).
-		// dir0 = normal direction of edge0 = normal dir of (0,0)->(5,0) = (0,-5).
-		// orient = dir0.x*normal1.y - dir0.y*normal1.x = 0*1 - (-5)*0 = 0. -> Not
-		// OPPOSING branch.
-		// weights are equal -> NONE.
-		assertEquals(InfiniteSpeedType.NONE, v50.getInfiniteSpeed(), "Degenerate vertex (5,0) should have NONE infinite speed (opposing normals, same weight)");
+		// normal1 = unit normal of edge1 (seg (5,0)->(10,0)) = unit((0,5)) = (0,1).
+		// dir0 = weighted normal direction of edge0 (seg (0,0)->(5,0)) = (0,5) * 1.0 =
+		// (0,5).
+		// orient = dir0.x*normal1.y - dir0.y*normal1.x = 0*1 - 5*0 = 0. -> Not OPPOSING
+		// branch.
+		// Weights are equal (default 1.0)? edge0.weight == edge1.weight -> true.
+		// Therefore, infiniteSpeed should be NONE.
+		assertEquals(WavefrontVertex.InfiniteSpeedType.NONE, v50.getInfiniteSpeed(),
+				"Vertex (5,0) infinite speed should be NONE (collinear, same weight, not opposing)");
 
-		// Expected Velocity: For COLLINEAR, NONE speed -> velocity is w * unit_normal
-		// Which edge's normal? Let's assume edge0: (0,0)->(5,0). Weighted normal is
-		// (0,-1)*1.0 = (0,-1).
-		assertEquals(0.0, v50.getVelocity().getX(), DELTA, "Degenerate vertex (5,0) velocity X should be 0");
-		assertEquals(-1.0, v50.getVelocity().getY(), DELTA, "Degenerate vertex (5,0) velocity Y should be -1 (along normal)");
+		// --- Expected Velocity ---
+		// Condition: angle == COLLINEAR and infiniteSpeed == NONE.
+		// Rule: Velocity is the weighted normal of edge0's supporting line.
+		// edge0 corresponds to segment (0,0)->(5,0).
+		// Supporting line direction vector: (5, 0).
+		// Left Normal: (-dy, dx) = (0, 5).
+		// Unit Left Normal: (0, 1).
+		// Weighted Normal (weight=1.0): (0, 1) * 1.0 = (0, 1).
+		// Why (0, 1)? This is the inward normal for the bottom edge of this CCW
+		// polygon.
+		// The vertex moves with the velocity of the edge it lies on during wavefront
+		// propagation.
+		assertEquals(0.0, v50.getVelocity().getX(), DELTA, "Vertex (5,0) velocity X should be 0");
+		assertEquals(1.0, v50.getVelocity().getY(), DELTA, "Vertex (5,0) velocity Y should be 1 (along inward normal)");
 	}
 
 	// --- Validation Helper Methods ---
