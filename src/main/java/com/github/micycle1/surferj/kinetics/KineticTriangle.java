@@ -1,5 +1,8 @@
 package com.github.micycle1.surferj.kinetics;
 
+import static com.github.micycle1.surferj.TriangulationUtils.ccw;
+import static com.github.micycle1.surferj.TriangulationUtils.cw;
+
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -7,8 +10,6 @@ import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.tuple.ImmutableTriple;
 import org.apache.commons.lang3.tuple.Pair;
 import org.locationtech.jts.geom.Coordinate;
-// import org.locationtech.jts.geom.GeometryFactory; // Removed, wasn't used
-import org.locationtech.jts.geom.LineSegment;
 import org.locationtech.jts.math.Vector2D;
 
 // Import logging framework if desired, e.g. import org.slf4j.Logger; import org.slf4j.LoggerFactory;
@@ -102,20 +103,15 @@ public class KineticTriangle {
 		this.vertices[1] = v1;
 		this.vertices[2] = v2;
 	}
-
-	// --- Static Utilities ---
-
-	/** Clockwise index. */
-	public static int cw(int i) {
-		return (i + 2) % 3; // = (i - 1 + 3) % 3
-	}
-
-	/** Counter-clockwise index. */
-	public static int ccw(int i) {
-		return (i + 1) % 3;
-	}
-
 	// --- Getters ---
+
+	public long getId() {
+		return id;
+	}
+
+	public int getComponent() {
+		return component;
+	}
 
 	public WavefrontVertex getVertex(int index) {
 		if (index < 0 || index >= 3) {
@@ -844,15 +840,17 @@ public class KineticTriangle {
 
 			if (isConstrained(infIdx)) {
 				edgeE = wavefronts[infIdx];
-				if (edgeE == null)
+				if (edgeE == null) {
 					throw new IllegalStateException("Unbounded KT" + id + " constraint flag mismatch edge " + infIdx);
+				}
 				definingVertexForLog = neighbor.getVertex(ccw(neighborInfIdx)); // This is 'v'
 				System.out.println(" KT" + id + " Using constrained edge from this triangle (Edge " + edgeE.id + ")");
 
 			} else { // neighbor is constrained
 				edgeE = neighbor.wavefronts[neighborInfIdx];
-				if (edgeE == null)
+				if (edgeE == null) {
 					throw new IllegalStateException("Unbounded neighbor KT" + neighbor.id + " constraint flag mismatch edge " + neighborInfIdx);
+				}
 				definingVertexForLog = getVertex(cw(infIdx)); // This is 'v'
 				System.out.println(" KT" + id + " Using constrained edge from neighbor (Edge " + edgeE.id + ")");
 			}

@@ -1,7 +1,10 @@
 package com.github.micycle1.surferj.kinetics;
 
+import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.locationtech.jts.algorithm.LineIntersector;
 import org.locationtech.jts.algorithm.Orientation;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.math.Vector2D;
@@ -10,6 +13,7 @@ import com.github.micycle1.surferj.SurfConstants;
 
 public class WavefrontVertex {
 	private static final AtomicLong idCounter = new AtomicLong(0);
+	private static final Coordinate ORIGIN = new Coordinate(0, 0);
 	public final long id;
 	public final Coordinate initialPosition; // Corresponds to pos_zero/pos_start
 	public boolean isInfinite; // NOTE messy? with also having InfiniteSpeedType?
@@ -30,6 +34,10 @@ public class WavefrontVertex {
 	private Coordinate posStop = null;
 
 	// Links for DCEL structure built during propagation
+	WavefrontVertex[] nextVertex = new WavefrontVertex[2];
+	WavefrontVertex[] prevVertex = new WavefrontVertex[2];
+
+	// NOTE below from an older approach
 	private WavefrontVertex nextVertex0 = null; // Next vertex along edge0 (CCW) boundary path
 	private WavefrontVertex prevVertex0 = null; // Previous vertex along edge0 boundary path
 	private WavefrontVertex nextVertex1 = null; // Next vertex along edge1 (CW) boundary path
@@ -103,6 +111,140 @@ public class WavefrontVertex {
 		this.velocity = new Coordinate(0, 0);
 		this.angle = VertexAngle.COLLINEAR;
 		this.infiniteSpeed = InfiniteSpeedType.NONE;
+	}
+
+	// --- Constructor used by makeVertex ---
+	/**
+	 * Private constructor to create a vertex with known initial position and
+	 * potentially stopping information if created during an event.
+	 *
+	 * @param initialPos Initial position (at time=0).
+	 * @param stopPos    Position where the vertex stops (often the creation
+	 *                   position).
+	 * @param stopTime   Time when the vertex stops (often the creation time).
+	 * @param edge0      Incident edge 0.
+	 * @param edge1      Incident edge 1.
+	 */
+	private WavefrontVertex(Coordinate initialPos, Coordinate stopPos, double stopTime, WavefrontEdge edge0, WavefrontEdge edge1) {
+		this.id = idCounter.incrementAndGet();
+		this.initialPosition = Objects.requireNonNull(initialPos, "Initial position cannot be null");
+
+		// Set incident edges and calculate geometry
+		// Using a private method avoids duplicating logic if other constructors exist
+		setIncidentEdges(edge0, edge1);
+
+		// If stopTime is valid, set stopping info
+		if (!Double.isNaN(stopTime) && stopTime >= -SurfConstants.TIME_TOL) { // Allow near-zero time
+			this.hasStopped = true;
+			this.timeStop = Math.max(0.0, stopTime); // Clamp time
+			this.posStop = Objects.requireNonNull(stopPos, "Stop position cannot be null if stop time is valid");
+		} else {
+			// Created before time 0 or not stopped initially
+			this.hasStopped = false;
+			this.timeStop = Double.NaN;
+			this.posStop = null;
+		}
+		// Initialize links to null
+		this.nextVertex[0] = this.nextVertex[1] = null;
+		this.prevVertex[0] = this.prevVertex[1] = null;
+	}
+
+	/**
+	 * Creates a new WavefrontVertex instance resulting from an event (like split or
+	 * constraint collapse) occurring at a specific time and position. Calculates
+	 * the initial position (time=0) by back-propagating.
+	 *
+	 * @param pos       The known position of the vertex at 'time'.
+	 * @param time      The time at which the vertex is created/known to be at
+	 *                  'pos'.
+	 * @param edgeA     The first incident wavefront edge.
+	 * @param edgeB     The second incident wavefront edge.
+	 * @param fromSplit Flag indicating if this vertex results from a split event
+	 *                  (C++ uses this for assertions, maybe logging in Java).
+	 * @return The newly created WavefrontVertex.
+	 */
+	public static WavefrontVertex makeVertex(Coordinate pos, double time, WavefrontEdge edgeA, WavefrontEdge edgeB, boolean fromSplit,
+			// TODO check this method
+			List<WavefrontVertex> vertices) {
+		if (Double.isNaN(time) || time < -SurfConstants.TIME_TOL) { // Use tolerance
+			throw new IllegalArgumentException("Invalid creation time: " + time);
+		}
+		// Clamp time >= 0
+//		double creationTime = Math.max(0.0, time);
+
+		// C++ Assertion check
+		if (!fromSplit) {
+			// LOG(INFO) or DEBUG check if needed. C++ has empty block here.
+		}
+
+		Coordinate posZero; // The initial position (t=0) we need to calculate
+		WavefrontSupportingLine lineA = edgeA.getSupportingLine(); // Assuming getter exists
+		WavefrontSupportingLine lineB = edgeB.getSupportingLine(); // Assuming getter exists
+
+		// Compute intersection of the supporting lines
+		var intersectionPoint = lineA.lineIntersection(lineB); // Assuming method exists
+		int intersection_type = LineIntersector.NO_INTERSECTION; // NONE
+		if (intersectionPoint != null) {
+			intersection_type = LineIntersector.POINT_INTERSECTION;
+		} else {
+			boolean collinear = lineA.collinear(lineB);
+			if (collinear) {
+				intersection_type = LineIntersector.COLLINEAR_INTERSECTION;
+			}
+		}
+
+		switch (intersection_type) {
+			case LineIntersector.COLLINEAR_INTERSECTION : // Lines are identical
+				// Back-propagate using velocity. Need to compute velocity first.
+				// Velocity depends on the angle type at the *intersection point*.
+				// We need to determine angle type (CONVEX, REFLEX, STRAIGHT) based on edge
+				// directions relative to each other.
+//				VertexAngle angleAtIntersection = calculateAngle(edgeA, edgeB);
+				Coordinate v = calculateVelocity(edgeA, edgeB, VertexAngle.COLLINEAR, InfiniteSpeedType.NONE, ORIGIN);
+				var velocity = Vector2D.create(v);
+				// pos_zero = pos - time * velocity;
+				posZero = Vector2D.create(pos).subtract(velocity.multiply(time)).toCoordinate();
+				break;
+
+			case LineIntersector.POINT_INTERSECTION : // Lines intersect at a single point (at t=0)
+				// The intersection point *is* the initial position (t=0).
+				posZero = intersectionPoint;
+				// Optional: Assert that pos ≈ intersectionPoint + time * velocity
+				// Vec2d checkVel = computeVelocity(intersectionPoint, lineA, lineB,
+				// determineAngleType(lineA, lineB));
+				// Vec2d expectedPos = intersectionPoint.add(checkVel.scale(creationTime));
+				// assert pos.distanceSq(expectedPos) < SurfConstants.ZERO_TOL_SQ : "Position
+				// mismatch after back-propagation";
+				break;
+
+			case LineIntersector.NO_INTERSECTION : // Lines are parallel (never intersect)
+				// This case might indicate an issue or a special scenario (e.g., straight
+				// vertex)
+				// C++ sets pos_zero = pos. This implies velocity is zero or lines shouldn't be
+				// parallel?
+				// If lines are parallel, the vertex shouldn't exist unless it's infinitely far
+				// away or angle is straight.
+				// Let's follow C++ for now, but this might need review.
+//                 LOGGER.warning("Parallel lines encountered in makeVertex. Setting posZero = current pos. Verify logic.");
+				System.err.println("Parallel lines encountered in makeVertex. Setting posZero = current pos. Verify logic.");
+				posZero = pos;
+				break;
+
+			default :
+				throw new IllegalStateException("Unhandled LineIntersectionType: " + intersection_type);
+		}
+
+		// Create the vertex using the calculated posZero and the provided stopping info
+		// (pos, time)
+		WavefrontVertex v = new WavefrontVertex(posZero, pos, time, edgeA, edgeB);
+
+		// Optional: Immediately link the new vertex to the edges (if constructor
+		// doesn't)
+		// edgeA.setVertex(?, v); // Need to know which end corresponds to edgeA/edgeB
+		// edgeB.setVertex(?, v);
+
+		vertices.add(v);
+		return v;
 	}
 
 	public void setIncidentEdge(int index, WavefrontEdge edge) {
@@ -290,6 +432,16 @@ public class WavefrontVertex {
 		System.err.println("Warning: Vertex.stop(time) called without position - stopping at initialPosition. Velocity needed.");
 	}
 
+	public void setNextVertex(int side, WavefrontVertex next, boolean headToTail) {
+		nextVertex[side] = next;
+
+		if (headToTail) {
+			next.prevVertex[side] = this;
+		} else {
+			next.nextVertex[1 - side] = this;
+		}
+	}
+
 	// --- DCEL Linking Methods ---
 	public void setNextVertex(int side, WavefrontVertex next) {
 		if (side == 0) {
@@ -327,8 +479,11 @@ public class WavefrontVertex {
 		if (this.prevVertex0 != null || other.prevVertex1 != null) {
 			throw new IllegalStateException("Cannot link tails: previous pointers already set.");
 		}
-		this.prevVertex0 = other;
-		other.prevVertex1 = this;
+		this.prevVertex0 = other; // NOTE unused
+		other.prevVertex1 = this; // NOTE unused
+
+		prevVertex[0] = other;
+		other.prevVertex[1] = this;
 		System.out.println("DCEL Link T2T: " + this + "[0] <- " + other + "[1]");
 	}
 
@@ -403,9 +558,9 @@ public class WavefrontVertex {
 				}
 
 				// Calculate geometric properties using helper methods
-				calculateAngle(); // Calculates and sets this.angle
-				calculateInfiniteSpeedType(); // Calculates and sets this.infiniteSpeed (needs this.angle)
-				calculateVelocity(); // Calculates and sets this.velocity (needs this.angle, this.infiniteSpeed)
+				angle = calculateAngle(edge0, edge1); // Calculates and sets this.angle
+				infiniteSpeed = calculateInfiniteSpeedType(edge0, edge1, angle); // Calculates and sets this.infiniteSpeed (needs this.angle)
+				velocity = calculateVelocity(edge0, edge1, angle, infiniteSpeed, initialPosition);
 
 			} catch (Exception e) {
 				System.err.println("Error during geometry recalculation for V" + id + ": " + e.getMessage());
@@ -448,125 +603,122 @@ public class WavefrontVertex {
 		return edge0_ok && edge1_ok;
 	}
 
-	private void calculateAngle() {
+	static VertexAngle calculateAngle(WavefrontEdge edge0, WavefrontEdge edge1) {
 		// Ensure both edges and their vertices are available
 		if (edge0 == null || edge1 == null || edge0.getVertex(0) == null || edge0.getVertex(1) == null || // Check vertices of edge0
 				edge1.getVertex(0) == null || edge1.getVertex(1) == null) { // Check vertices of edge1
-
-			// Default to COLLINEAR if edge info is incomplete (matches C++ default)
-			// Could also consider an UNDEFINED state if preferred
-			this.angle = VertexAngle.COLLINEAR;
-			return;
+			return VertexAngle.COLLINEAR;
 		}
 
 		try {
-			// Identify the three relevant points:
-			// p0: The vertex preceding this one along edge0 (CCW incoming)
-			// p1: This vertex (the common endpoint)
-			// p2: The vertex following this one along edge1 (CCW outgoing)
+			// Find the common vertex between edge0 and edge1
+			WavefrontVertex commonVertex = null;
+			if (edge0.getVertex(0) == edge1.getVertex(0)) {
+				commonVertex = edge0.getVertex(0);
+			} else if (edge0.getVertex(0) == edge1.getVertex(1)) {
+				commonVertex = edge0.getVertex(0);
+			} else if (edge0.getVertex(1) == edge1.getVertex(0)) {
+				commonVertex = edge0.getVertex(1);
+			} else if (edge0.getVertex(1) == edge1.getVertex(1)) {
+				commonVertex = edge0.getVertex(1);
+			}
 
-			Coordinate p1 = this.initialPosition; // The vertex itself
+			if (commonVertex == null) {
+				System.err.println("Warning: No common vertex found between edges");
+				return VertexAngle.COLLINEAR;
+			}
 
-			// Find p0: It's the "other" vertex of edge0
-			WavefrontVertex v_p0 = (edge0.getVertex(0) == this) ? edge0.getVertex(1) : edge0.getVertex(0);
+			Coordinate p1 = commonVertex.initialPosition; // The common vertex
+
+			// Find p0: The "other" vertex of edge0
+			WavefrontVertex v_p0 = (edge0.getVertex(0) == commonVertex) ? edge0.getVertex(1) : edge0.getVertex(0);
 			if (v_p0 == null) {
-				System.err.println("Warning: Could not find preceding vertex p0 for angle calculation at V" + id);
-				this.angle = VertexAngle.COLLINEAR;
-				return;
+				System.err.println("Warning: Could not find preceding vertex p0 for angle calculation");
+				return VertexAngle.COLLINEAR;
 			}
 			Coordinate p0 = v_p0.initialPosition;
 
-			// Find p2: It's the "other" vertex of edge1
-			WavefrontVertex v_p2 = (edge1.getVertex(0) == this) ? edge1.getVertex(1) : edge1.getVertex(0);
+			// Find p2: The "other" vertex of edge1
+			WavefrontVertex v_p2 = (edge1.getVertex(0) == commonVertex) ? edge1.getVertex(1) : edge1.getVertex(0);
 			if (v_p2 == null) {
-				System.err.println("Warning: Could not find succeeding vertex p2 for angle calculation at V" + id);
-				this.angle = VertexAngle.COLLINEAR;
-				return;
+				System.err.println("Warning: Could not find succeeding vertex p2 for angle calculation");
+				return VertexAngle.COLLINEAR;
 			}
 			Coordinate p2 = v_p2.initialPosition;
 
 			// Calculate orientation using JTS: Orientation.index(p0, p1, p2)
-			// p0 = incoming point, p1 = vertex, p2 = outgoing point
 			int orientationIndex = Orientation.index(p0, p1, p2);
 
 			// Map JTS orientation index to VertexAngle enum
 			switch (orientationIndex) {
-				case Orientation.COUNTERCLOCKWISE : // CCW turn from vector p0->p1 to p1->p2
-					this.angle = VertexAngle.LEFT_TURN; // Corresponds to CGAL::LEFT_TURN
-					break;
-				case Orientation.CLOCKWISE : // CW turn from vector p0->p1 to p1->p2
-					this.angle = VertexAngle.RIGHT_TURN; // Corresponds to CGAL::RIGHT_TURN
-					break;
+				case Orientation.COUNTERCLOCKWISE :
+					return VertexAngle.LEFT_TURN;
+				case Orientation.CLOCKWISE :
+					return VertexAngle.RIGHT_TURN;
 				case Orientation.COLLINEAR :
-					this.angle = VertexAngle.COLLINEAR; // Corresponds to CGAL::COLLINEAR (STRAIGHT)
-					break;
+					return VertexAngle.COLLINEAR;
 				default :
-					// Should not happen with Orientation.index
-					System.err.println("Warning: Unexpected JTS Orientation index: " + orientationIndex + " at V" + id);
-					this.angle = VertexAngle.COLLINEAR; // Default on unexpected result
-					break;
+					System.err.println("Warning: Unexpected JTS Orientation index: " + orientationIndex);
+					return VertexAngle.COLLINEAR;
 			}
-//			System.out.printf("wfv%s: %s %s (%s)\n", id, edge0.toString(), edge1.toString(), angle);
 		} catch (Exception e) {
-			System.err.println("Error during JTS Orientation calculation for V" + id + ": " + e.getMessage());
+			System.err.println("Error during JTS Orientation calculation: " + e.getMessage());
 			e.printStackTrace();
-			this.angle = VertexAngle.COLLINEAR; // Default on error
+			return VertexAngle.COLLINEAR;
 		}
 	}
 
-	// Optional helper methods extracted from above
-	private void calculateInfiniteSpeedType() {
-		if (this.angle == VertexAngle.COLLINEAR) {
+	static InfiniteSpeedType calculateInfiniteSpeedType(WavefrontEdge edge0, WavefrontEdge edge1, VertexAngle angle) {
+		if (angle == VertexAngle.COLLINEAR) {
 			// Use unit normals and weights as before
-			Vector2D normal1 = this.edge1.getSupportingLine().getUnitNormal(); // Requires getUnitNormal()
-			Vector2D dir0 = this.edge0.getSupportingLine().getNormalDirection();
+			Vector2D normal1 = edge1.getSupportingLine().getUnitNormal(); // Requires getUnitNormal()
+			Vector2D dir0 = edge0.getSupportingLine().getNormalDirection();
 			// Ensure unitNormal calculation is safe (handles zero length dir)
 			if (normal1 == null || dir0 == null) { // Check if normals are valid
-				this.infiniteSpeed = InfiniteSpeedType.NONE;
-				return;
+				return InfiniteSpeedType.NONE;
 			}
 			double orient = dir0.getX() * normal1.getY() - dir0.getY() * normal1.getX();
 			if (orient > SurfConstants.ZERO_DET) { // Tolerance
-				this.infiniteSpeed = InfiniteSpeedType.OPPOSING;
-			} else if (Math.abs(this.edge0.getWeight() - this.edge1.getWeight()) > SurfConstants.ZERO_WEIGHT_DIFF) { // Tolerance
-				this.infiniteSpeed = InfiniteSpeedType.WEIGHTED;
+				return InfiniteSpeedType.OPPOSING;
+			} else if (Math.abs(edge0.getWeight() - edge1.getWeight()) > SurfConstants.ZERO_WEIGHT_DIFF) { // Tolerance
+				return InfiniteSpeedType.WEIGHTED;
 			} else {
-				this.infiniteSpeed = InfiniteSpeedType.NONE;
+				return InfiniteSpeedType.NONE;
 			}
 		} else {
-			this.infiniteSpeed = InfiniteSpeedType.NONE;
+			return InfiniteSpeedType.NONE;
 		}
 	}
 
-	private void calculateVelocity() {
-		if (this.infiniteSpeed == InfiniteSpeedType.NONE) {
-			if (this.angle != VertexAngle.COLLINEAR) {
-				WavefrontSupportingLine line0 = this.edge0.getSupportingLine();
-				WavefrontSupportingLine line1 = this.edge1.getSupportingLine();
+	static Coordinate calculateVelocity(WavefrontEdge edge0, WavefrontEdge edge1, VertexAngle angle, InfiniteSpeedType infiniteSpeed,
+			Coordinate initialPosition) {
+		if (infiniteSpeed == InfiniteSpeedType.NONE) {
+			if (angle != VertexAngle.COLLINEAR) {
+				WavefrontSupportingLine line0 = edge0.getSupportingLine();
+				WavefrontSupportingLine line1 = edge1.getSupportingLine();
 				Coordinate intersect = line0.lineAtOne().lineIntersection(line1.lineAtOne()); // Intersection at t=1
 				if (intersect != null) {
 					// Velocity is vector from initial pos to intersection at t=1
-					this.velocity = new Coordinate(intersect.getX() - initialPosition.getX(), intersect.getY() - initialPosition.getY());
+					return new Coordinate(intersect.getX() - initialPosition.getX(), intersect.getY() - initialPosition.getY());
 				} else {
 					// Parallel lines? Should have been caught by COLLINEAR? Error.
-					System.err.println("Error: No intersection for non-collinear vertex V" + id + " at time 1. Setting zero velocity.");
-					this.velocity = new Coordinate(0, 0);
+					System.err.println("Error: No intersection for non-collinear vertex at time 1. Setting zero velocity.");
+					return new Coordinate(0, 0);
 				}
 			} else { // COLLINEAR and NONE infinite speed (implies same direction, same weight)
 				// Velocity is along the normal (weighted normal?) - check C++ intent
-				// Using unit normal * weight seems consistent with wavefront propagation
-				Vector2D weightedNormal = this.edge0.getSupportingLine().getNormal(); // Get weighted normal
+				Vector2D weightedNormal = edge0.getSupportingLine().getNormal(); // Get weighted normal
 				if (weightedNormal == null) { // Handle degenerate case
-					System.err.println("Error: Cannot get weighted normal for collinear vertex V" + id + ". Setting zero velocity.");
-					this.velocity = new Coordinate(0, 0);
+					System.err.println("Error: Cannot get weighted normal for collinear vertex. Setting zero velocity.");
+					return new Coordinate(0, 0);
 				} else {
 					// Velocity is w * unit_normal. Since getNormal() = w * unit_normal, this is
 					// just getNormal()
-					this.velocity = new Coordinate(weightedNormal.getX(), weightedNormal.getY());
+					return new Coordinate(weightedNormal.getX(), weightedNormal.getY());
 				}
 			}
 		} else { // Infinite speed
-			this.velocity = new Coordinate(0, 0); // Finite velocity is zero
+			return new Coordinate(0, 0); // Finite velocity is zero
 		}
 	}
 

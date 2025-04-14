@@ -43,7 +43,7 @@ public class SupportLineTest {
 	@Test
 	void testSquareWavefrontEdgeCreation() throws ParseException {
 		Polygon square = createSquare();
-		KineticTriangulation kt = new KineticTriangulation(square, gf);
+		KineticTriangulation kt = new KineticTriangulation(square);
 
 		assertEquals(4, kt.getWavefrontEdges().size(), "Should create 4 wavefront edges for square boundary");
 		assertEquals(4, kt.getEdgeMap().size(), "Edge map should contain 4 unique constraint segments");
@@ -67,7 +67,7 @@ public class SupportLineTest {
 	@Test
 	void testSquareTriangleWavefrontLinks() throws ParseException {
 		Polygon square = createSquare();
-		KineticTriangulation kt = new KineticTriangulation(square, gf);
+		KineticTriangulation kt = new KineticTriangulation(square);
 
 		assertEquals(2, kt.getTriangles().size()); // Expect 2 triangles
 
@@ -106,7 +106,7 @@ public class SupportLineTest {
 	@Test
 	void testSquareEdgeVertexLinks() throws ParseException {
 		Polygon square = createSquare();
-		KineticTriangulation kt = new KineticTriangulation(square, gf);
+		KineticTriangulation kt = new KineticTriangulation(square);
 
 		assertEquals(4, kt.getWavefrontEdges().size());
 		assertEquals(4, kt.getVertices().size());
@@ -146,7 +146,7 @@ public class SupportLineTest {
 	@Test
 	void testHoleWavefrontEdgeCreation() throws ParseException {
 		Polygon squareWithHole = createSquareWithHole();
-		KineticTriangulation kt = new KineticTriangulation(squareWithHole, gf);
+		KineticTriangulation kt = new KineticTriangulation(squareWithHole);
 
 		// 4 outer + 4 inner edges
 		assertEquals(8, kt.getWavefrontEdges().size(), "Should create 8 wavefront edges for square with hole");
@@ -164,7 +164,7 @@ public class SupportLineTest {
 	@Test
 	void testSingleTriangleWavefrontEdgeCreation() throws ParseException {
 		Polygon singleTriPoly = createSingleTrianglePoly();
-		KineticTriangulation kt = new KineticTriangulation(singleTriPoly, gf);
+		KineticTriangulation kt = new KineticTriangulation(singleTriPoly);
 
 		assertEquals(3, kt.getWavefrontEdges().size());
 		assertEquals(3, kt.getEdgeMap().size());

@@ -1,5 +1,7 @@
 package com.github.micycle1.surferj.kinetics;
 
+import org.locationtech.jts.algorithm.LineIntersector;
+import org.locationtech.jts.algorithm.RobustLineIntersector;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.LineSegment;
 import org.locationtech.jts.math.Vector2D;
@@ -60,8 +62,8 @@ public class WavefrontSupportingLine {
 	public WavefrontSupportingLine(LineSegment segment, double weight) {
 		this.segment = segment;
 		this.weight = weight;
-		
-		//  inward-pointing normal relative to the edge direction within a CCW framework.
+
+		// inward-pointing normal relative to the edge direction within a CCW framework.
 
 		// Compute direction vector of the line (from p0 to p1)
 		Vector2D directionVector = new Vector2D(segment.p0, segment.p1);
@@ -82,6 +84,11 @@ public class WavefrontSupportingLine {
 		this.normal = this.normalUnit.multiply(this.weight);
 	}
 
+	/**
+	 * Returns a coordinate of intersection if there is a unique intersection point.
+	 * Otherwise, null is returned (lines may be collinear or parallel -- never
+	 * intersecting)
+	 */
 	public Coordinate lineIntersection(WavefrontSupportingLine o) {
 		return this.segment.lineIntersection(o.segment);
 	}
@@ -117,6 +124,12 @@ public class WavefrontSupportingLine {
 	 */
 	public LineSegment lineAtOne() {
 		return getOffsetSegment(1);
+	}
+
+	public boolean collinear(WavefrontSupportingLine o) {
+		RobustLineIntersector i = new RobustLineIntersector();
+		i.computeIntersection(segment.p0, segment.p1, o.segment.p0, o.segment.p1);
+		return i.getIntersectionNum() == LineIntersector.COLLINEAR_INTERSECTION;
 	}
 
 	/**

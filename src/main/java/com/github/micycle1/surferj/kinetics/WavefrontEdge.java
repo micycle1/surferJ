@@ -1,13 +1,17 @@
 package com.github.micycle1.surferj.kinetics;
 
+import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.apache.commons.lang3.tuple.Pair;
 import org.locationtech.jts.algorithm.Orientation;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.LineSegment;
 import org.locationtech.jts.math.Vector2D;
 
 import com.github.micycle1.surferj.SurfConstants;
+import com.github.micycle1.surferj.TriangulationUtils;
 import com.github.micycle1.surferj.collapse.CollapseSpec;
 import com.github.micycle1.surferj.collapse.EdgeCollapseSpec;
 import com.github.micycle1.surferj.collapse.EdgeCollapseType;
@@ -101,6 +105,41 @@ public class WavefrontEdge {
 		}
 		// Update vertex back pointers if vertices are provided
 		updateVertexIncidentEdges();
+	}
+
+	// --- NEW Private Constructor (for split) ---
+	/**
+	 * Private constructor used internally, primarily by the split() method, to
+	 * create new edge halves. Allows setting initial vertex references and
+	 * inheriting properties from the edge being split.
+	 *
+	 * @param v0               The first vertex (can be null initially).
+	 * @param v1               The second vertex (can be null initially).
+	 * @param supportingLine   The supporting line (shared with the original edge).
+	 * @param incidentTriangle The initial incident triangle (may change).
+	 * @param skeletonFace     The associated skeleton face (shared with the
+	 *                         original edge).
+	 * @param isBeveling       Whether this edge represents a bevel.
+	 */
+	private WavefrontEdge(WavefrontVertex v0, WavefrontVertex v1, WavefrontSupportingLine supportingLine, KineticTriangle incidentTriangle,
+			SkeletonDCELFace skeletonFace, boolean isBeveling) {
+		this.id = idCounter.incrementAndGet();
+		this.vertex0 = v0;
+		this.vertex1 = v1;
+		this.supportingLine = Objects.requireNonNull(supportingLine, "SupportingLine cannot be null in private constructor");
+		this.canonicalSegment = new CanonicalSegment(supportingLine.getSegment()); // Re-derive canonical segment
+		this.weight = supportingLine.getWeight(); // Get weight from supporting line
+		this.incidentTriangle = incidentTriangle;
+		this.skeletonFace = skeletonFace;
+		this.isBeveling = isBeveling;
+		this.isInitial = false; // Split edges are never 'initial' input edges
+
+		// Important: Link edge back to vertices if needed by vertex logic.
+		// Be careful not to double-link if the public constructors also do this.
+		// This linking might be better done when the vertices are finalized.
+		// if (v0 != null) v0.addIncidentEdge(this); // Example
+		// if (v1 != null) v1.addIncidentEdge(this); // Example
+		updateVertexIncidentEdges(); // NOTE correct???
 	}
 
 	// --- Getters ---
@@ -476,6 +515,62 @@ public class WavefrontEdge {
 		return CollapseSpec.fromEdgeCollapse(edgeSpec, incidentTriangle, collapsingEdgeIndex);
 	}
 
+	/**
+	 * Splits this wavefront edge into two new edges at an implicit point. Marks the
+	 * current edge as dead and adds the two new edge halves to the provided list.
+	 * The new vertices connecting the halves must be set by the caller.
+	 *
+	 * @param wavefrontEdges The list to which the new edge halves will be added.
+	 * @param splitPosition  The geometric location of the split (used by caller,
+	 *                       not directly here).
+	 * @return A Pair containing the two new WavefrontEdge instances (first = part
+	 *         connected to original vertex 0, second = part connected to original
+	 *         vertex 1).
+	 */
+	public Pair<WavefrontEdge, WavefrontEdge> split(List<WavefrontEdge> wavefrontEdges, Coordinate splitPosition) {
+		// NOTE: splitPosition isn't used in the C++ code provided for *creating* the
+		// edges,
+		// but it's essential context for the caller
+		// (KineticEventHandler.handleSplitEvent)
+		// to create the new WavefrontVertices *at* that position.
+
+		if (isDead) {
+			// Handle appropriately - maybe return null or throw exception?
+			// C++ doesn't show a check, but it's good practice.
+			System.err.println("Warning: Attempting to split an already dead WavefrontEdge.");
+			// Returning null might be problematic downstream. Maybe return existing dead
+			// parts if tracked?
+			// For now, let's proceed but log heavily. If split is called, it implies an
+			// event occurred.
+		}
+
+		markDead(); // Mark this edge instance as dead
+
+		// Create the first new edge half: Original vertex[0] ----> NULL (new vertex to
+		// be set by caller)
+		// It uses the same supporting line, incident triangle, skeleton face, and
+		// beveling status.
+		WavefrontEdge edgeA = new WavefrontEdge(vertex0, // Start vertex is the same as original start
+				null, // End vertex will be the new split vertex (set by caller)
+				this.supportingLine, this.incidentTriangle, // Initially assumes same incident triangle
+				this.skeletonFace, this.isBeveling);
+
+		// Create the second new edge half: NULL (new vertex to be set by caller) ---->
+		// Original vertex[1]
+		WavefrontEdge edgeB = new WavefrontEdge(null, // Start vertex will be the new split vertex (set by caller)
+				vertex1, // End vertex is the same as original end
+				this.supportingLine, this.incidentTriangle, // Initially assumes same incident triangle
+				this.skeletonFace, // Assumes same skeleton face
+				this.isBeveling);
+
+		// Add the new edges to the master list
+		wavefrontEdges.add(edgeA);
+		wavefrontEdges.add(edgeB);
+
+		// Return the pair of new edges
+		return Pair.of(edgeA, edgeB);
+	}
+
 	// --- Utility and Validation ---
 
 	/** Basic sanity check before using the edge in collapse calculations. */
@@ -500,8 +595,8 @@ public class WavefrontEdge {
 		}
 		// Additional check: ensure vertices match triangle's vertices for that edge
 		// index
-		WavefrontVertex triVCCW = incidentTriangle.getVertex(KineticTriangle.ccw(collapsingEdgeIndex));
-		WavefrontVertex triVCW = incidentTriangle.getVertex(KineticTriangle.cw(collapsingEdgeIndex));
+		WavefrontVertex triVCCW = incidentTriangle.getVertex(TriangulationUtils.ccw(collapsingEdgeIndex));
+		WavefrontVertex triVCW = incidentTriangle.getVertex(TriangulationUtils.cw(collapsingEdgeIndex));
 		if (vertex0 != triVCCW || vertex1 != triVCW) {
 			throw new IllegalStateException("Edge " + id + " vertices (V" + vertex0.id + ", V" + vertex1.id + ")" + " do not match incident triangle "
 					+ incidentTriangle.getName() + " vertices for edge index " + collapsingEdgeIndex + " (expected V" + (triVCCW != null ? triVCCW.id : "null")

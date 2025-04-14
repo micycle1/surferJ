@@ -3,6 +3,8 @@ package com.github.micycle1.surferj;
 public class SurfConstants {
 
 	public static final double ZERO_NT = 1e-12;
+	public static final double ZERO = 1e-12;
+	public static final double CORE_ZERO = 1e-12;
 	public static final double ZERO_NT_SQ = 1e-12;
 	/**
 	 * Set to -1 for slower edge wins. Changing this during the propagation will
@@ -23,4 +25,7 @@ public class SurfConstants {
 	public static final double TIME_TOL = 1e-12;
 	public static final double ZERO_DET = 1e-12;
 	public static final double ZERO_WEIGHT_DIFF = 1e-12;
+	public static final double ZERO_TOL_SQ = 1e-12;
+	public static final double COLLINEAR_TOL_SQ = 1e-12;
+
 }

@@ -1,5 +1,7 @@
 package com.github.micycle1.surferj.kinetics;
 
+import static com.github.micycle1.surferj.TriangulationUtils.ccw;
+import static com.github.micycle1.surferj.TriangulationUtils.cw;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -68,10 +70,10 @@ class KineticTriangleTest {
 			throw new NullPointerException("Cannot link null triangle");
 		}
 
-		WavefrontVertex t1_vCCW = t1.getVertex(KineticTriangle.ccw(edgeIdx1));
-		WavefrontVertex t1_vCW = t1.getVertex(KineticTriangle.cw(edgeIdx1));
-		WavefrontVertex t2_vCCW = t2.getVertex(KineticTriangle.ccw(edgeIdx2));
-		WavefrontVertex t2_vCW = t2.getVertex(KineticTriangle.cw(edgeIdx2));
+		WavefrontVertex t1_vCCW = t1.getVertex(ccw(edgeIdx1));
+		WavefrontVertex t1_vCW = t1.getVertex(cw(edgeIdx1));
+		WavefrontVertex t2_vCCW = t2.getVertex(ccw(edgeIdx2));
+		WavefrontVertex t2_vCW = t2.getVertex(cw(edgeIdx2));
 
 		// Crucial check: Ensure vertices exist before comparing
 		if (t1_vCCW == null || t1_vCW == null || t2_vCCW == null || t2_vCW == null) {

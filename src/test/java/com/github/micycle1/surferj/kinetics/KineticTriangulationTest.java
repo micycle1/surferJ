@@ -138,7 +138,7 @@ public class KineticTriangulationTest {
 	@Test
 	void testSquareInitialization() throws ParseException {
 		Polygon square = createSquare();
-		KineticTriangulation kt = new KineticTriangulation(square, gf);
+		KineticTriangulation kt = new KineticTriangulation(square);
 
 		// Expected: CDT of a square usually results in 2 triangles.
 		assertEquals(2, kt.getTriangles().size(), "Square should yield 2 triangles");
@@ -154,7 +154,7 @@ public class KineticTriangulationTest {
 	@Test
 	void testLShapeInitialization() throws ParseException {
 		Polygon lShape = createLShape();
-		KineticTriangulation kt = new KineticTriangulation(lShape, gf);
+		KineticTriangulation kt = new KineticTriangulation(lShape);
 
 		// Expected number of triangles/vertices/edges depends on the specific CDT
 		// result.
@@ -170,7 +170,7 @@ public class KineticTriangulationTest {
 	@Test
 	void testSquareWithHoleInitialization() throws ParseException {
 		Polygon squareWithHole = createSquareWithHole();
-		KineticTriangulation kt = new KineticTriangulation(squareWithHole, gf);
+		KineticTriangulation kt = new KineticTriangulation(squareWithHole);
 
 		// Expected: Triangles covering the area between outer and inner ring.
 		assertTrue(kt.getTriangles().size() > 0, "Square with hole should yield triangles");
@@ -186,7 +186,7 @@ public class KineticTriangulationTest {
 	@Test
 	void testSingleTrianglePolyInitialization() throws ParseException {
 		Polygon singleTriPoly = createSingleTrianglePoly();
-		KineticTriangulation kt = new KineticTriangulation(singleTriPoly, gf);
+		KineticTriangulation kt = new KineticTriangulation(singleTriPoly);
 
 		// Expected: 1 triangle
 		assertEquals(1, kt.getTriangles().size(), "Single triangle polygon should yield 1 triangle");
@@ -210,7 +210,7 @@ public class KineticTriangulationTest {
 	void testDegeneratePolyInitialization() throws ParseException {
 		// Test if it handles collinear points on boundary gracefully
 		Polygon degeneratePoly = createDegeneratePoly();
-		KineticTriangulation kt = new KineticTriangulation(degeneratePoly, gf);
+		KineticTriangulation kt = new KineticTriangulation(degeneratePoly);
 
 		// Expected vertices: 5 unique coordinates
 		assertEquals(5, kt.getVertices().size(), "Degenerate polygon should have 5 unique vertices");
@@ -228,7 +228,7 @@ public class KineticTriangulationTest {
 		String bowtieWKT = "POLYGON ((0 0, 10 10, 0 10, 10 0, 0 0))";
 		try {
 			Polygon bowtie = (Polygon) reader.read(bowtieWKT);
-			assertThrows(IllegalArgumentException.class, () -> new KineticTriangulation(bowtie, gf),
+			assertThrows(IllegalArgumentException.class, () -> new KineticTriangulation(bowtie),
 					"Self-intersecting polygon should throw IllegalArgumentException");
 		} catch (ParseException e) {
 			fail("Unexpected ParseException: " + e.getMessage());
@@ -238,7 +238,7 @@ public class KineticTriangulationTest {
 	@Test
 	void testDuplicatePoints() throws ParseException {
 		Polygon polyWithDuplicates = (Polygon) reader.read("POLYGON ((0 0, 0 0, 10 0, 10 10, 0 10, 0 0))");
-		KineticTriangulation kt = new KineticTriangulation(polyWithDuplicates, gf);
+		KineticTriangulation kt = new KineticTriangulation(polyWithDuplicates);
 
 		// JTS normalizes duplicate points, expect 4 vertices (square)
 		assertEquals(4, kt.getVertices().size(), "Polygon with duplicate points should have 4 unique vertices");
@@ -253,7 +253,7 @@ public class KineticTriangulationTest {
 	void testNearCollinearPoints() throws ParseException {
 		// Triangle with one vertex very close to the line between others
 		Polygon nearCollinear = (Polygon) reader.read("POLYGON ((0 0, 10 0, 5 0.0001, 0 0))");
-		KineticTriangulation kt = new KineticTriangulation(nearCollinear, gf);
+		KineticTriangulation kt = new KineticTriangulation(nearCollinear);
 
 		// Should still produce a valid triangulation (1 triangle expected)
 		assertEquals(1, kt.getTriangles().size(), "Near-collinear polygon should yield 1 triangle");
@@ -267,7 +267,7 @@ public class KineticTriangulationTest {
 	@Test
 	void testConcavePolygonTriangleInclusion() throws ParseException {
 		Polygon concavePoly = createConcavePolygon();
-		KineticTriangulation kt = new KineticTriangulation(concavePoly, gf);
+		KineticTriangulation kt = new KineticTriangulation(concavePoly);
 
 		// Concave polygon should have 5 vertices
 		assertEquals(5, kt.getVertices().size(), "Concave polygon should have 5 vertices");
@@ -301,7 +301,7 @@ public class KineticTriangulationTest {
 		System.setErr(new PrintStream(errContent));
 
 		try {
-			KineticTriangulation kt = new KineticTriangulation(multiHolePoly, gf);
+			KineticTriangulation kt = new KineticTriangulation(multiHolePoly);
 			assertEquals(12, kt.getVertices().size(), "Polygon with two holes should have 10 vertices");
 			assertEquals(12, kt.getWavefrontEdges().size(), "Polygon with two holes should have 10 constraint edges");
 			assertTrue(kt.getTriangles().size() > 0, "Polygon with two holes should yield triangles");
@@ -316,7 +316,7 @@ public class KineticTriangulationTest {
 	@Test
 	void testLargePolygon() {
 		Polygon largePoly = createLargePolygon(100); // 100 vertices
-		KineticTriangulation kt = new KineticTriangulation(largePoly, gf);
+		KineticTriangulation kt = new KineticTriangulation(largePoly);
 
 		assertEquals(100, kt.getVertices().size(), "Large polygon should have 100 vertices");
 		assertEquals(100, kt.getWavefrontEdges().size(), "Large polygon should have 100 constraint edges");
@@ -331,7 +331,7 @@ public class KineticTriangulationTest {
 	@Test
 	void testSquareVertexGeometry() throws ParseException {
 		Polygon square = createSquare(); // POLYGON ((0 0, 10 0, 10 10, 0 10, 0 0))
-		KineticTriangulation kt = new KineticTriangulation(square, gf);
+		KineticTriangulation kt = new KineticTriangulation(square);
 
 		// --- Test Vertex (0, 0) ---
 		WavefrontVertex v00 = findVertexAt(kt, 0, 0);
@@ -393,7 +393,7 @@ public class KineticTriangulationTest {
 	@Test
 	void testLShapeReflexVertexGeometry() throws ParseException {
 		Polygon lShape = createLShape();
-		KineticTriangulation kt = new KineticTriangulation(lShape, gf);
+		KineticTriangulation kt = new KineticTriangulation(lShape);
 
 		// Test the inner reflex corner vertex (10, 10)
 		WavefrontVertex v1010 = findVertexAt(kt, 10, 10);
@@ -417,7 +417,7 @@ public class KineticTriangulationTest {
 	@Test
 	void testSingleTriangleVertexGeometry() throws ParseException {
 		Polygon singleTriPoly = createSingleTrianglePoly(); // (0 0, 10 0, 5 10, 0 0)
-		KineticTriangulation kt = new KineticTriangulation(singleTriPoly, gf);
+		KineticTriangulation kt = new KineticTriangulation(singleTriPoly);
 
 		// Test vertex (0, 0)
 		WavefrontVertex v00 = findVertexAt(kt, 0, 0);
@@ -445,7 +445,7 @@ public class KineticTriangulationTest {
 	@Test
 	void testDegenerateCollinearVertexGeometry() throws ParseException {
 		Polygon degeneratePoly = createDegeneratePoly();
-		KineticTriangulation kt = new KineticTriangulation(degeneratePoly, gf);
+		KineticTriangulation kt = new KineticTriangulation(degeneratePoly);
 
 		// Test the middle collinear vertex (5, 0) on the bottom edge
 		WavefrontVertex v50 = findVertexAt(kt, 5, 0);

@@ -1,9 +1,13 @@
 package com.github.micycle1.surferj.kinetics;
 
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -11,7 +15,6 @@ import java.util.Set;
 import org.apache.commons.lang3.tuple.Pair;
 import org.locationtech.jts.algorithm.Orientation;
 import org.locationtech.jts.geom.Coordinate;
-import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.LineSegment;
 import org.locationtech.jts.geom.LineString;
 import org.locationtech.jts.geom.Point;
@@ -19,6 +22,11 @@ import org.locationtech.jts.geom.Polygon;
 import org.locationtech.jts.triangulate.DelaunayTriangulationBuilder;
 import org.locationtech.jts.triangulate.quadedge.QuadEdgeSubdivision;
 import org.locationtech.jts.triangulate.quadedge.QuadEdgeTriangle;
+
+import com.github.micycle1.surferj.SurfConstants;
+import com.github.micycle1.surferj.collapse.CollapseType;
+import com.github.micycle1.surferj.wavefront.EventQueue;
+import com.github.micycle1.surferj.wavefront.SkeletonDCEL;
 
 /**
  * The static structure of the triangulation at time t=0. The algorithm now
@@ -40,9 +48,9 @@ public class KineticTriangulation {
 		BasicInput: Holds the initial polygon data.
 	 */
 
-	private final List<KineticTriangle> triangles = new ArrayList<>();
-	private final List<WavefrontVertex> vertices = new ArrayList<>(); // Includes INFINITE_VERTEX potentially
-	private final List<WavefrontEdge> wavefrontEdges = new ArrayList<>();
+	final List<KineticTriangle> triangles = new ArrayList<>();
+	final List<WavefrontVertex> vertices = new ArrayList<>(); // Includes INFINITE_VERTEX potentially
+	final List<WavefrontEdge> wavefrontEdges = new ArrayList<>();
 
 	// Lookup maps built during initialization
 	private final Map<Coordinate, WavefrontVertex> vertexMap = new HashMap<>();
@@ -54,25 +62,49 @@ public class KineticTriangulation {
 	private final List<WavefrontVertex> newVerticesThisStep = new ArrayList<>();
 	private final List<WavefrontEdge> newEdgesThisStep = new ArrayList<>();
 
-	public List<KineticTriangle> getTriangles() {
-		return Collections.unmodifiableList(triangles);
+	SkeletonDCEL dcel;
+
+	EventQueue queue; // Needs setter/getter or package-private access
+	int restrictComponent = -1;
+	boolean initialized = false;
+	boolean finalized = false;
+
+	// Refinement members
+	Deque<KineticTriangle> checkRefinement = new LinkedList<>(); // Or provide getCheckRefinement()
+	// Use BitSet for efficiency if triangle IDs are dense and numerous, else
+	// boolean[]
+	BitSet tidxInCheckRefinement; // Or provide getTidxInCheckRefinement()
+
+	// Statistics counters (needs getters/setters or package-private access)
+
+	int[] eventTypeCounter = new int[CollapseType.values().length]; // Size based on enum
+	long maxTrianglesPerEdgeEvent = 0;
+	long avgTrianglesPerEdgeEventSum = 0;
+	long avgTrianglesPerEdgeEventCtr = 0;
+	long maxTrianglesPerSplitEvent = 0;
+	long avgTrianglesPerSplitEventSum = 0;
+	long avgTrianglesPerSplitEventCtr = 0;
+	double lastEventTime = SurfConstants.ZERO;
+	long eventsPerCurrentEventTime = 0;
+	long maxEventsPerTime = 0;
+	long avgEventsPerTimeSum = 0;
+	long avgEventsPerTimeCtr = 0;
+
+	public KineticTriangulation(SkeletonDCEL dcel) {
+		this.dcel = dcel;
 	}
 
-	public List<WavefrontVertex> getVertices() {
-		return Collections.unmodifiableList(vertices);
-	}
-
-	public List<WavefrontEdge> getWavefrontEdges() {
-		return Collections.unmodifiableList(wavefrontEdges);
+	public KineticTriangulation(Polygon polygon) {
+		this.dcel = new SkeletonDCEL();
+		initialise(polygon);
 	}
 
 	/**
 	 * Initializes the KineticTriangulation from a JTS Polygon.
 	 *
-	 * @param inputPolygon    The input polygon (may have holes).
-	 * @param geometryFactory The geometry factory to use.
+	 * @param inputPolygon The input polygon (may have holes).
 	 */
-	public KineticTriangulation(Polygon inputPolygon, GeometryFactory geometryFactory) {
+	public void initialise(Polygon inputPolygon) {
 		if (inputPolygon == null || inputPolygon.isEmpty()) {
 			// Or throw exception? For now, allow empty init.
 			System.err.println("Warning: Initializing KineticTriangulation with empty polygon.");
@@ -229,21 +261,23 @@ public class KineticTriangulation {
 			// Vertex 0 (wfEdge.getVertex(0)) should have this as its edge1 (CW)
 			// Vertex 1 (wfEdge.getVertex(1)) should have this as its edge0 (CCW)
 			// NOTE handled by AndUpdateAdj?
-//			if (wfEdge.getVertex(0) != null) {
-//				wfEdge.getVertex(0).setIncidentEdge(1, wfEdge); // Set as right/CW edge
-//			}
-//			if (wfEdge.getVertex(1) != null) {
-//				wfEdge.getVertex(1).setIncidentEdge(0, wfEdge); // Set as left/CCW edge
-//			}
+			// if (wfEdge.getVertex(0) != null) {
+			// wfEdge.getVertex(0).setIncidentEdge(1, wfEdge); // Set as right/CW edge
+			// }
+			// if (wfEdge.getVertex(1) != null) {
+			// wfEdge.getVertex(1).setIncidentEdge(0, wfEdge); // Set as left/CCW edge
+			// }
 
 		}
 
 		// Final check for vertex incident edge consistency (optional, debug)
-//		for (WavefrontVertex wv : this.vertices) {
-//			if (!wv.isInfinite && (wv.getIncidentEdge(0) == null || wv.getIncidentEdge(1) == null)) {
-//				System.err.println("Warning: Vertex " + wv + " has incomplete incident edges.");
-//			}
-//		}
+		// for (WavefrontVertex wv : this.vertices) {
+		// if (!wv.isInfinite && (wv.getIncidentEdge(0) == null || wv.getIncidentEdge(1)
+		// == null)) {
+		// System.err.println("Warning: Vertex " + wv + " has incomplete incident
+		// edges.");
+		// }
+		// }
 
 		// --- Pass 4: Calculate Vertex Geometry ---
 		for (WavefrontVertex wv : this.vertices) {
@@ -252,6 +286,18 @@ public class KineticTriangulation {
 			}
 		}
 
+	}
+
+	public List<KineticTriangle> getTriangles() {
+		return Collections.unmodifiableList(triangles);
+	}
+
+	public List<WavefrontVertex> getVertices() {
+		return Collections.unmodifiableList(vertices);
+	}
+
+	public List<WavefrontEdge> getWavefrontEdges() {
+		return wavefrontEdges;
 	}
 
 	/** Creates a new WavefrontVertex, adds it to the main list, and returns it. */
@@ -685,6 +731,108 @@ public class KineticTriangulation {
 
 	public Map<CanonicalSegment, WavefrontEdge> getEdgeMap() {
 		return edgeMap;
+	}
+
+	public void setQueue(EventQueue eq) {
+		queue = eq;
+
+	}
+
+	public void createRemainingSkeletonDcel() {
+		// TODO Auto-generated method stub
+
+	}
+
+	/**
+	 * a "component" refers to a disconnected part of the input polygon or Planar
+	 * Straight Line Graph (PSLG). Imagine your input is two separate squares
+	 * instead of one single polygon. Each square would be a separate connected
+	 * component.
+	 *
+	 * @return
+	 */
+	public boolean isRestrictComponent() {
+		// TODO Auto-generated method stub
+		return false;
+	}
+
+	// --- AroundVertexIterator (Keep as inner class here) ---
+	// Port the C++ AroundVertexIterator logic as a Java inner class
+	public static class AroundVertexIterator implements Iterator<KineticTriangle> { // Or just helper methods
+		private KineticTriangle currentT;
+		private int currentVIdx;
+		// ... fields for start/end conditions ...
+
+		public AroundVertexIterator(KineticTriangle t, int vIdx) {
+			/* ... */ }
+
+		// Implement next(), hasNext() or provide walkCw(), walkCcw() methods
+		// Need access to KineticTriangle.neighbor() and KineticTriangle.index()
+
+		@Override
+		public boolean hasNext() {
+			/* Check end condition */ return false;
+		} // Placeholder
+
+		@Override
+		public KineticTriangle next() {
+			/* Advance CW/CCW */ return null;
+		} // Placeholder
+
+		// Or alternative methods:
+		public KineticTriangle t() {
+			return currentT;
+		}
+
+		public int vInTIdx() {
+			return currentVIdx;
+		}
+
+		public AroundVertexIterator walkCw() {
+			/* ... update state ... */ return this;
+		}
+
+		public AroundVertexIterator walkCcw() {
+			/* ... update state ... */ return this;
+		}
+
+		public boolean isEnd() {
+			return currentT == null;
+		} // Example end condition
+
+		// Port mostCw(), mostCcw()
+		public AroundVertexIterator mostCw() {
+			/* ... */ return this;
+		}
+
+		public AroundVertexIterator mostCcw() {
+			/* ... */ return this;
+		}
+
+		// equals/hashCode if needed
+	}
+
+	public AroundVertexIterator incidentFacesIterator(KineticTriangle t, int vInT) {
+		return new AroundVertexIterator(t, vInT);
+	}
+
+	public AroundVertexIterator incidentFacesEnd() {
+		return new AroundVertexIterator(null, -1); // Represent end state
+	}
+
+	public EventQueue getQueue() {
+		return queue;
+	}
+
+	public Deque<KineticTriangle> getCheckRefinement() {
+		// TODO Auto-generated method stub
+
+		return checkRefinement;
+	}
+
+	public BitSet getTidxInCheckRefinement() {
+		// TODO Auto-generated method stub
+		return tidxInCheckRefinement;
 	}
 
 }
