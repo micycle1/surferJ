@@ -2,6 +2,7 @@ package com.github.micycle1.surferj.collapse;
 
 import java.util.Objects;
 
+import com.github.micycle1.surferj.SurfConstants;
 import com.github.micycle1.surferj.kinetics.KineticTriangle;
 
 public class CollapseSpec implements Comparable<CollapseSpec> {
@@ -171,7 +172,7 @@ public class CollapseSpec implements Comparable<CollapseSpec> {
 
 		// Compare time with tolerance
 		double timeDiff = this.time - other.time;
-		if (Math.abs(timeDiff) > 1e-9) { // Use tolerance
+		if (Math.abs(timeDiff) > SurfConstants.TIME_TOL) { // Use tolerance
 			return Double.compare(this.time, other.time);
 		}
 

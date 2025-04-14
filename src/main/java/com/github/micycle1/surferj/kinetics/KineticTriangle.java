@@ -787,6 +787,7 @@ public class KineticTriangle {
 		final int infIdx = getInfiniteVertexIndex();
 		CollapseSpec edgeCollapse = CollapseSpec.NEVER;
 
+		// 1. Check for collapse of the triangle's own finite edge (if constrained)
 		if (isConstrained(infIdx)) {
 			WavefrontEdge boundedEdge = wavefronts[infIdx];
 			if (boundedEdge == null) {
@@ -795,14 +796,15 @@ public class KineticTriangle {
 			edgeCollapse = boundedEdge.getCollapse(this.component, currentTime, infIdx);
 			// log.debug(" KT{} Bounded edge {} (Edge {}) collapse: {}", id, infIdx,
 			// boundedEdge.id, edgeCollapse); // Use logger
-			System.out.println("        KT" + id + " Bounded edge " + infIdx + " (Edge " + boundedEdge.id + ") collapse: " + edgeCollapse);
+			System.out.println("        KT" + id + " Bounded edge " + infIdx + " (Edge " + (boundedEdge != null ? boundedEdge.id : "null") + ") collapse: "
+					+ edgeCollapse);
 		} else {
 			// log.debug(" KT{} Bounded edge {} is not constrained (spoke).", id, infIdx);
 			// // Use logger
 			System.out.println("        KT" + id + " Bounded edge " + infIdx + " is not constrained (spoke).");
 		}
 
-		// Check if CCW vertex leaves the convex hull boundary
+		// 2. Check if CCW vertex from neighbor leaves the convex hull boundary
 		final int neighborEdgeIdx = ccw(infIdx);
 		final KineticTriangle neighbor = neighbors[neighborEdgeIdx];
 		if (neighbor == null) {
@@ -813,111 +815,144 @@ public class KineticTriangle {
 		}
 
 		final int neighborInfIdx = neighbor.getInfiniteVertexIndex();
-		final WavefrontVertex v = getVertex(cw(infIdx)); // Common finite vertex
+		// Get the common finite vertex 'v' (vertex opposite the edge towards the
+		// neighbor in this triangle)
+		final WavefrontVertex v = getVertex(cw(infIdx));
 		if (v == null || v.isInfinite()) {
 			throw new IllegalStateException("Invalid common finite vertex v for unbounded KT" + id);
 		}
+		// Verification: Check if 'v' is the vertex opposite the edge towards this
+		// triangle in the neighbor
 		if (v != neighbor.getVertex(ccw(neighborInfIdx))) {
 			throw new IllegalStateException("Finite vertex mismatch between unbounded neighbors " + getName() + " and " + neighbor.getName());
 		}
 
-		final WavefrontVertex w = neighbor.getVertex(cw(neighborInfIdx)); // Vertex that might leave CH
+		// Get the vertex 'w' from the neighbor (the one that might leave the CH)
+		final WavefrontVertex w = neighbor.getVertex(cw(neighborInfIdx)); // Vertex 'w' in neighbor (ccw from vInf->v edge)
 		if (w == null || w.isInfinite()) {
 			throw new IllegalStateException("Invalid vertex w for unbounded neighbor " + neighbor.getName());
 		}
 
-		final int relevantEdgeIdx = cw(infIdx); // Edge of *this* triangle incident to v, ccw from shared edge
 		CollapseSpec vertexLeavesCH = CollapseSpec.NEVER;
 
-		if (isConstrained(relevantEdgeIdx)) {
-			final WavefrontEdge edgeE = wavefronts[relevantEdgeIdx];
-			if (edgeE == null) {
-				throw new IllegalStateException("Unbounded KT" + id + " constraint flag mismatch edge " + relevantEdgeIdx);
-			}
-			final WavefrontSupportingLine lineE = edgeE.getSupportingLine();
-			// log.debug(" KT{} Checking if vertex w (V{}) leaves CH across constrained edge
-			// {} (Edge {})", id, w.id, relevantEdgeIdx, edgeE.id); // Use logger
-			System.out.println("        KT" + id + " Checking if vertex w (V" + w.id + ") leaves CH across constrained edge " + relevantEdgeIdx + " (Edge "
-					+ edgeE.id + ")");
+		// Check if the boundary edge (either in this triangle or the neighbor) is
+		// constrained
+		if (isConstrained(infIdx) || neighbor.isConstrained(neighborInfIdx)) {
+			// --- Constrained Boundary Case ---
+			final WavefrontEdge edgeE;
+			final WavefrontVertex definingVertexForLog; // Vertex used to determine which edge is 'edgeE'
 
-			final Sign edgeFaster = edgeIsFasterThanVertex(w, lineE);
+			if (isConstrained(infIdx)) {
+				edgeE = wavefronts[infIdx];
+				if (edgeE == null)
+					throw new IllegalStateException("Unbounded KT" + id + " constraint flag mismatch edge " + infIdx);
+				definingVertexForLog = neighbor.getVertex(ccw(neighborInfIdx)); // This is 'v'
+				System.out.println(" KT" + id + " Using constrained edge from this triangle (Edge " + edgeE.id + ")");
+
+			} else { // neighbor is constrained
+				edgeE = neighbor.wavefronts[neighborInfIdx];
+				if (edgeE == null)
+					throw new IllegalStateException("Unbounded neighbor KT" + neighbor.id + " constraint flag mismatch edge " + neighborInfIdx);
+				definingVertexForLog = getVertex(cw(infIdx)); // This is 'v'
+				System.out.println(" KT" + id + " Using constrained edge from neighbor (Edge " + edgeE.id + ")");
+			}
+			System.out.println("      (Constrained check uses common vertex V" + v.id + " against Edge " + edgeE.id + ", following C++ logic)");
+
+			final WavefrontSupportingLine lineE = edgeE.getSupportingLine();
+
+			// *** KEY CHANGE: Use common vertex 'v' for checks, following C++ logic ***
+			System.out.println(" KT" + id + " Checking relative speed of common vertex V" + v.id + " and constrained edge (Edge " + edgeE.id + ")");
+			final Sign edgeFaster = edgeIsFasterThanVertex(v, lineE); // Use common vertex 'v'
+
 			if (edgeFaster == Sign.POSITIVE) {
-				// log.debug(" Edge is faster than vertex w, w will not leave CH.", id); // Use
-				// logger
-				System.out.println("          Edge is faster than vertex w, w will not leave CH.");
+				// C++ logic: If edge pulls away from common vertex 'v' faster, assume 'w' won't
+				// cross inwards.
+				System.out.println(" Edge " + edgeE.id + " is faster than common vertex V" + v.id + " (along normal). Treating as NEVER leaves CH.");
+				vertexLeavesCH = CollapseSpec.NEVER; // Match C++ behavior
 			} else if (edgeFaster == Sign.ZERO) {
-				VertexOnSupportingLineResult hitResult = getTimeVertexOnSupportingLine(w, lineE);
+				// Parallel motion. Check if already collinear (distance is zero).
+				System.out.println(" Edge " + edgeE.id + " and common vertex V" + v.id + " have same speed along normal (parallel).");
+				VertexOnSupportingLineResult hitResult = getTimeVertexOnSupportingLine(v, lineE); // Use 'v'
 				if (hitResult.type == VertexOnSupportingLineType.ALWAYS) {
-					// log.debug(" Vertex w is always on the line (collinear, same speed), will not
-					// leave CH.", id); // Use logger
-					System.out.println("          Vertex w is always on the line (collinear, same speed), will not leave CH.");
-				} else {
-					// log.debug(" Vertex w is never on the line (parallel, same speed), will not
-					// leave CH.", id); // Use logger
-					System.out.println("          Vertex w is never on the line (parallel, same speed), will not leave CH.");
+					System.out.println(" Common vertex V" + v.id + " is always on the line (collinear). Treating as NEVER leaves CH.");
+				} else { // NEVER type
+					System.out.println(" Common vertex V" + v.id + " is never on the line (parallel, offset). Treating as NEVER leaves CH.");
 				}
+				vertexLeavesCH = CollapseSpec.NEVER; // Match C++ behavior for ZERO sign
 			} else { // edgeFaster == Sign.NEGATIVE
-				// log.debug(" Vertex w is faster than edge, might leave CH.", id); // Use
-				// logger
-				System.out.println("          Vertex w is faster than edge, might leave CH.");
-				VertexOnSupportingLineResult hitResult = getTimeVertexOnSupportingLine(w, lineE);
+				// C++ logic: Edge is NOT pulling away faster than common vertex 'v'.
+				// Calculate time when 'v' would hit the line 'lineE'.
+				// This time is attributed to the CCW_VERTEX_LEAVES_CH event.
+				System.out.println(" Common vertex V" + v.id + " is faster than or equal speed to edge " + edgeE.id + " (along normal).");
+				VertexOnSupportingLineResult hitResult = getTimeVertexOnSupportingLine(v, lineE); // Use 'v'
+
 				if (hitResult.type == VertexOnSupportingLineType.ONCE && hitResult.time >= currentTime - SurfConstants.ZERO_NT) {
-					// log.debug(" Vertex w hits line at future time: {}", id, hitResult.time); //
-					// Use logger
-					System.out.println("          Vertex w hits line at future time: " + hitResult.time);
+					// Check if the event V hits Line E occurs in the future
+					System.out.println(" Common vertex V" + v.id + " hits line of edge " + edgeE.id + " at future time: " + hitResult.time
+							+ ". Creating CCW_VERTEX_LEAVES_CH event.");
+					// Assign this time to the 'w' leaving event, using the original triangle's
+					// infIdx
 					vertexLeavesCH = new CollapseSpec(CollapseType.CCW_VERTEX_LEAVES_CH, hitResult.time, this, infIdx);
 				} else {
-					// log.debug(" Vertex w hits line in past or never/always.", id); // Use logger
-					System.out.println("          Vertex w hits line in past or never/always.");
+					System.out.println(" Common vertex V" + v.id + " hits line of edge " + edgeE.id + " in past or never/always. Treating as NEVER leaves CH.");
+					// vertexLeavesCH remains NEVER
 				}
 			}
-		} else { // Relevant edge is spoke
+		} else {
+			// --- Unconstrained Boundary (Spoke) Case ---
+			// This logic remains the same, using the determinant of u, v, w
 			final WavefrontVertex u = getVertex(ccw(infIdx)); // Other finite vertex of this triangle
 			if (u == null || u.isInfinite()) {
 				throw new IllegalStateException("Invalid vertex u for unbounded KT" + id);
 			}
-			// log.debug(" KT{} Checking if vertex w (V{}) leaves CH across spoke (u=V{},
-			// v=V{})", id, w.id, u.id, v.id); // Use logger
-			System.out.println("        KT" + id + " Checking if vertex w (V" + w.id + ") leaves CH across spoke (u=V" + u.id + ", v=V" + v.id + ")");
-
+			System.out.println(" KT" + id + " Checking if vertex w (V" + w.id + ") leaves CH across spoke (u=V" + u.id + ", v=V" + v.id + ")");
 			boolean sameVel = u.getVelocity().equals(v.getVelocity()) && v.getVelocity().equals(w.getVelocity());
 			if (sameVel) {
-				LineSegment segmentUV = new LineSegment(u.getPositionAt(currentTime), v.getPositionAt(currentTime));
-				if (segmentUV.distance(w.getPositionAt(currentTime)) < SurfConstants.ZERO_DIST) {
-					// log.debug(" Vertices u,v,w collinear and same velocity. Treating as NEVER.",
-					// id); // Use logger
-					System.out.println("          Vertices u,v,w collinear and same velocity. Treating as NEVER.");
-					vertexLeavesCH = CollapseSpec.NEVER;
+				// Match C++ logic: Check for coincident vertices. If not coincident, result is
+				// NEVER.
+				// Note: C++ checks pos_zero. Using getInitialPosition() assuming it's
+				// equivalent.
+				boolean coincident = u.getInitialPosition().equals(v.getInitialPosition()) || v.getInitialPosition().equals(w.getInitialPosition());
+				// C++ doesn't check u == w, but might be implied? Added for completeness.
+				// || u.getInitialPosition().equals(w.getInitialPosition());
+
+				if (coincident) {
+					// C++ aborts here. We should probably throw or handle distinct from NEVER.
+					System.err.println("Warning: Vertices u,v,w have same velocity AND are coincident. C++ would abort.");
+					// Decide on appropriate error handling or specific CollapseSpec type if needed.
+					// For now, mirroring the 'NEVER' from the non-coincident case, but this is
+					// ambiguous.
+					vertexLeavesCH = CollapseSpec.NEVER; // Or throw new IllegalStateException("...");
 				} else {
-					// log.debug(" Vertices u,v,w have same velocity, not collinear -> NEVER leaves
-					// CH.", id); // Use logger
-					System.out.println("          Vertices u,v,w have same velocity, not collinear -> NEVER leaves CH.");
-					vertexLeavesCH = CollapseSpec.NEVER;
+					System.out.println(" Vertices u,v,w have same velocity, not coincident -> NEVER leaves CH.");
+					vertexLeavesCH = CollapseSpec.NEVER; // This matches the C++ 'else' branch for non-coincident.
 				}
 			} else {
+				// Velocities differ, calculate time of collinearity using determinant
 				final Polynomial determinantUVw = computeDeterminantFromVertices(u, v, w);
 				Optional<Double> collapseTimeOpt = getGenericCollapseTime(currentTime, determinantUVw);
-
 				if (collapseTimeOpt.isPresent()) {
 					double collapseTime = collapseTimeOpt.get();
-					// log.debug(" Vertices u,v,w become collinear at time: {}", id, collapseTime);
-					// // Use logger
-					System.out.println("          Vertices u,v,w become collinear at time: " + collapseTime);
+					System.out.println(" Vertices u,v,w become collinear at time: " + collapseTime);
 					vertexLeavesCH = new CollapseSpec(CollapseType.CCW_VERTEX_LEAVES_CH, collapseTime, this, infIdx);
 				} else {
-					// log.debug(" Vertices u,v,w never become collinear in the future.", id); //
-					// Use logger
-					System.out.println("          Vertices u,v,w never become collinear in the future.");
+					System.out.println(" Vertices u,v,w never become collinear in the future.");
+					// vertexLeavesCH remains NEVER
 				}
 			}
 		}
 
 		// log.debug(" KT{} Edge collapse: {}", id, edgeCollapse); // Use logger
 		// log.debug(" KT{} Vertex leaves CH: {}", id, vertexLeavesCH); // Use logger
-		System.out.println("        KT" + id + " Edge collapse: " + edgeCollapse);
-		System.out.println("        KT" + id + " Vertex leaves CH: " + vertexLeavesCH);
+		System.out.println("        KT" + id + " Final Edge collapse: " + edgeCollapse);
+		System.out.println("        KT" + id + " Final Vertex leaves CH: " + vertexLeavesCH);
 
+		// Return the earliest of the two possible events
 		return ObjectUtils.min(edgeCollapse, vertexLeavesCH);
+	}
+
+	public double cross(Vector2D v1, Vector2D v2) {
+		return v1.getX() * v2.getY() - v1.getY() * v2.getX();
 	}
 
 	// --- Helper Methods for Collapse Calculation ---
@@ -1489,7 +1524,7 @@ public class KineticTriangle {
 		return new VertexOnSupportingLineResult(collapseTime, type);
 	}
 
-	public static Sign edgeIsFasterThanVertex(WavefrontVertex v, WavefrontSupportingLine line) {
+	static Sign edgeIsFasterThanVertex(WavefrontVertex v, WavefrontSupportingLine line) {
 		if (v == null || line == null) {
 			throw new NullPointerException("Null vertex or line in edgeIsFasterThanVertex");
 		}

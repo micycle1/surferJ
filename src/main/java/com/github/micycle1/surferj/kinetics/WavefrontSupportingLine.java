@@ -8,7 +8,7 @@ import com.github.micycle1.surferj.SurfConstants;
 
 /**
  * When are WavefrontSupportingLine created in C++?
- *
+ * <p>
  * During KineticTriangulation::create_supporting_lines: This is the primary
  * creation point. When the code iterates through the faces of the initial
  * BasicTriangulation (the CDT result) and identifies a constrained edge (i.e.,
@@ -18,7 +18,7 @@ import com.github.micycle1.surferj.SurfConstants;
  * WavefrontSupportingLine>(u, v, weight) is created. This
  * WavefrontSupportingLine object captures the infinite line containing the
  * segment (u, v) and its associated weight.
- *
+ * <p>
  * During KineticTriangulation::create_bevels_at_vertex (Potentially): When
  * handling degree-1 vertices (and potentially other reflex vertices requiring
  * beveling, though that part is complex and we're ignoring it for now), the
@@ -60,6 +60,8 @@ public class WavefrontSupportingLine {
 	public WavefrontSupportingLine(LineSegment segment, double weight) {
 		this.segment = segment;
 		this.weight = weight;
+		
+		//  inward-pointing normal relative to the edge direction within a CCW framework.
 
 		// Compute direction vector of the line (from p0 to p1)
 		Vector2D directionVector = new Vector2D(segment.p0, segment.p1);
