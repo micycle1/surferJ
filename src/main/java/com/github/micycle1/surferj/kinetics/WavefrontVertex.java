@@ -249,10 +249,12 @@ public class WavefrontVertex {
 	}
 
 	public WavefrontEdge getIncidentEdge(int index) {
-		if (index == 0)
+		if (index == 0) {
 			return edge0;
-		if (index == 1)
+		}
+		if (index == 1) {
 			return edge1;
+		}
 		throw new IndexOutOfBoundsException("Index must be 0 or 1");
 	}
 
@@ -277,8 +279,9 @@ public class WavefrontVertex {
 
 	// Overload for calculating position (Requires velocity implementation later)
 	public void stop(double time) {
-		if (isInfinite)
+		if (isInfinite) {
 			throw new IllegalStateException("Cannot stop the infinite vertex.");
+		}
 		// TODO: Calculate stop position based on initialPosition, velocity, and time
 		// Coordinate calculatedPos = getPositionAt(time); // Need getPositionAt with
 		// velocity
@@ -289,21 +292,23 @@ public class WavefrontVertex {
 
 	// --- DCEL Linking Methods ---
 	public void setNextVertex(int side, WavefrontVertex next) {
-		if (side == 0)
+		if (side == 0) {
 			this.nextVertex0 = next;
-		else if (side == 1)
+		} else if (side == 1) {
 			this.nextVertex1 = next;
-		else
+		} else {
 			throw new IndexOutOfBoundsException("Side must be 0 or 1");
+		}
 	}
 
 	public void setPrevVertex(int side, WavefrontVertex prev) {
-		if (side == 0)
+		if (side == 0) {
 			this.prevVertex0 = prev;
-		else if (side == 1)
+		} else if (side == 1) {
 			this.prevVertex1 = prev;
-		else
+		} else {
 			throw new IndexOutOfBoundsException("Side must be 0 or 1");
+		}
 	}
 
 	public WavefrontVertex getNextVertex(int side) {
@@ -332,8 +337,9 @@ public class WavefrontVertex {
 	 * (prev[side]).
 	 */
 	public void linkHeadToTail(int side, WavefrontVertex next) {
-		if (side != 0 && side != 1)
+		if (side != 0 && side != 1) {
 			throw new IndexOutOfBoundsException("Side must be 0 or 1");
+		}
 		if (getNextVertex(side) != null || next.getPrevVertex(side) != null) {
 			System.err.println("Warning: Overwriting DCEL H2T links between " + this + " and " + next + " on side " + side);
 			// throw new IllegalStateException("Cannot link head-to-tail: pointers already
@@ -349,8 +355,9 @@ public class WavefrontVertex {
 	 * (next[otherSide]).
 	 */
 	public void linkHeadToHead(int thisSide, WavefrontVertex other, int otherSide) {
-		if ((thisSide != 0 && thisSide != 1) || (otherSide != 0 && otherSide != 1))
+		if ((thisSide != 0 && thisSide != 1) || (otherSide != 0 && otherSide != 1)) {
 			throw new IndexOutOfBoundsException("Side must be 0 or 1");
+		}
 		if (getNextVertex(thisSide) != null || other.getNextVertex(otherSide) != null) {
 			System.err.println("Warning: Overwriting DCEL H2H links between " + this + " and " + other);
 			// throw new IllegalStateException("Cannot link head-to-head: pointers already
@@ -424,7 +431,7 @@ public class WavefrontVertex {
 	 * Helper to check if the stored edge0 and edge1 correctly reference this
 	 * vertex. Assumes edge0 is incoming CCW (ends at this vertex) and edge1 is
 	 * outgoing CCW (starts at this vertex).
-	 * 
+	 *
 	 * @return true if consistent, false otherwise.
 	 */
 	private boolean checkEdgeConsistency() {

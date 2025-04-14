@@ -1,14 +1,21 @@
 package com.github.micycle1.surferj.kinetics;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.LineSegment;
+import org.locationtech.jts.math.Vector2D;
 
+import com.github.micycle1.surferj.SurfConstants;
 import com.github.micycle1.surferj.collapse.CollapseSpec;
 import com.github.micycle1.surferj.collapse.CollapseType;
 import com.github.micycle1.surferj.collapse.EdgeCollapseSpec;
@@ -17,10 +24,6 @@ import com.github.micycle1.surferj.kinetics.KineticTriangle.Sign;
 import com.github.micycle1.surferj.kinetics.KineticTriangle.VertexOnSupportingLineResult;
 import com.github.micycle1.surferj.kinetics.KineticTriangle.VertexOnSupportingLineType;
 import com.github.micycle1.surferj.kinetics.WavefrontVertex.InfiniteSpeedType;
-import com.github.micycle1.surferj.kinetics.WavefrontVertex.VertexAngle;
-import com.github.micycle1.surferj.SurfConstants;
-
-import org.locationtech.jts.math.Vector2D;
 
 /**
  * JUnit tests for the KineticTriangle class.
@@ -50,8 +53,9 @@ class KineticTriangleTest {
 	// Helper to create an edge and ensure vertices are linked correctly from the
 	// start
 	private static WavefrontEdge createEdge(WavefrontVertex v0, WavefrontVertex v1, double weight) {
-		if (v0 == null || v1 == null)
+		if (v0 == null || v1 == null) {
 			throw new NullPointerException("Cannot create edge with null vertex");
+		}
 		LineSegment seg = new LineSegment(v0.getInitialPosition(), v1.getInitialPosition());
 		WavefrontEdge edge = new WavefrontEdge(seg, weight);
 		// Use the proper linking method immediately
@@ -61,8 +65,9 @@ class KineticTriangleTest {
 
 	// Helper to link triangles, ensuring vertex consistency
 	private static void linkTriangles(KineticTriangle t1, int edgeIdx1, KineticTriangle t2, int edgeIdx2) {
-		if (t1 == null || t2 == null)
+		if (t1 == null || t2 == null) {
 			throw new NullPointerException("Cannot link null triangle");
+		}
 
 		WavefrontVertex t1_vCCW = t1.getVertex(KineticTriangle.ccw(edgeIdx1));
 		WavefrontVertex t1_vCW = t1.getVertex(KineticTriangle.cw(edgeIdx1));
@@ -743,7 +748,7 @@ class KineticTriangleTest {
 	}
 
 	/**
-	 * 
+	 *
 	 * This test aims to create a situation where a geometric flip event would occur
 	 * (vertex v0 moving towards the line v1-v2), but it should be rejected because
 	 * v0 is geometrically convex (a LEFT_TURN in the wavefront context).

@@ -244,12 +244,12 @@ public class KineticTriangulation {
 //				System.err.println("Warning: Vertex " + wv + " has incomplete incident edges.");
 //			}
 //		}
-		
+
 		// --- Pass 4: Calculate Vertex Geometry ---
 		for (WavefrontVertex wv : this.vertices) {
-		    if (!wv.isInfinite) {
-		        wv.recalculateGeometry(); // Calculate geometry now that all links are established
-		    }
+			if (!wv.isInfinite) {
+				wv.recalculateGeometry(); // Calculate geometry now that all links are established
+			}
 		}
 
 	}

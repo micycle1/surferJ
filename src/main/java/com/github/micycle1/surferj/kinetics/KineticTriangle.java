@@ -11,6 +11,8 @@ import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.LineSegment;
 import org.locationtech.jts.math.Vector2D;
 
+// Import logging framework if desired, e.g. import org.slf4j.Logger; import org.slf4j.LoggerFactory;
+import com.github.micycle1.surferj.SurfConstants;
 import com.github.micycle1.surferj.collapse.CollapseSpec;
 import com.github.micycle1.surferj.collapse.CollapseType;
 import com.github.micycle1.surferj.collapse.EdgeCollapseSpec;
@@ -18,8 +20,6 @@ import com.github.micycle1.surferj.collapse.EdgeCollapseType;
 import com.github.micycle1.surferj.collapse.Polynomial;
 import com.github.micycle1.surferj.collapse.QuadraticSolver;
 import com.github.micycle1.surferj.kinetics.WavefrontVertex.InfiniteSpeedType;
-// Import logging framework if desired, e.g. import org.slf4j.Logger; import org.slf4j.LoggerFactory;
-import com.github.micycle1.surferj.SurfConstants;
 
 /**
  * A triangle, part of the kinetic triangulation.
@@ -46,7 +46,7 @@ public class KineticTriangle {
 
 	public final long id;
 	public int component; // Represents the polygon component the triangle belongs to. Simplified in some
-								// logic.
+							// logic.
 
 	// Vertices in CCW order
 	private final WavefrontVertex[] vertices = new WavefrontVertex[3];
@@ -65,7 +65,7 @@ public class KineticTriangle {
 	// --- Debugging aid (optional, like C++) ---
 	// private final WavefrontVertex[] collapseSpecComputedWithVertices = new
 	// WavefrontVertex[3]; // Make final if used
-	
+
 	public KineticTriangle() {
 		// NOTE this constructor, not in original.
 		// required now because KineticTriangulation initalises vertices lazily.
@@ -682,7 +682,8 @@ public class KineticTriangle {
 		// Check determinant sign at current time (should be >= 0 within tolerance)
 		double detNow = determinant.evaluate(currentTime);
 		if (detNow < -SurfConstants.ZERO_AREA_SQ) {
-			System.err.println("Warning: Triangle " + getName() + " has negative area " + detNow + " at time " + currentTime + ". (triangle's orientation fipped earlier?)");
+			System.err.println("Warning: Triangle " + getName() + " has negative area " + detNow + " at time " + currentTime
+					+ ". (triangle's orientation fipped earlier?)");
 			// Depending on strictness, could return INVALID or proceed cautiously.
 			// can be ok, if event occurred in past
 		}
@@ -764,7 +765,8 @@ public class KineticTriangle {
 		// Check determinant sign at current time
 		double detNow = determinant.evaluate(currentTime);
 		if (detNow < -SurfConstants.ZERO_AREA_SQ) {
-			System.err.println("Warning: Triangle " + getName() + " has negative area " + detNow + " at time " + currentTime +". (triangle's orientation fipped earlier?)");
+			System.err.println("Warning: Triangle " + getName() + " has negative area " + detNow + " at time " + currentTime
+					+ ". (triangle's orientation fipped earlier?)");
 		}
 
 		return calculateFlipEvent(currentTime, determinant);

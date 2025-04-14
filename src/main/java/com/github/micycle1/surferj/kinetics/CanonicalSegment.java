@@ -1,13 +1,14 @@
 package com.github.micycle1.surferj.kinetics;
 
+import java.util.Objects;
+
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.LineSegment;
-import java.util.Objects;
 
 /**
  * Represents a LineSegment with a canonical representation (sorted endpoints)
  * suitable for use as a Map key or in a Set.
- * 
+ *
  * USED FOR HASHING. Useless, can't i use unique edges from the triangulation?
  */
 public class CanonicalSegment {
@@ -50,10 +51,12 @@ public class CanonicalSegment {
 
 	@Override
 	public boolean equals(Object o) {
-		if (this == o)
+		if (this == o) {
 			return true;
-		if (o == null || getClass() != o.getClass())
+		}
+		if (o == null || getClass() != o.getClass()) {
 			return false;
+		}
 		CanonicalSegment that = (CanonicalSegment) o;
 		// JTS Coordinate equals handles coordinate equality
 		return Objects.equals(p0, that.p0) && Objects.equals(p1, that.p1);

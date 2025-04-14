@@ -48,18 +48,21 @@ public class EdgeCollapseSpec {
 
 	@Override
 	public String toString() {
-		if (Double.isNaN(time))
+		if (Double.isNaN(time)) {
 			return "EdgeCollapseSpec{" + type + '}';
+		}
 		return "EdgeCollapseSpec{" + type + ", time=" + String.format("%.6f", time) + '}';
 	}
 
 	// Basic equals/hashCode for testing
 	@Override
 	public boolean equals(Object o) {
-		if (this == o)
+		if (this == o) {
 			return true;
-		if (o == null || getClass() != o.getClass())
+		}
+		if (o == null || getClass() != o.getClass()) {
 			return false;
+		}
 		EdgeCollapseSpec that = (EdgeCollapseSpec) o;
 		// Use tolerance for time comparison if type requires time
 		boolean timeEquals;

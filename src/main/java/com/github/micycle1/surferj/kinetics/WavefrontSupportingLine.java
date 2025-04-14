@@ -8,7 +8,7 @@ import com.github.micycle1.surferj.SurfConstants;
 
 /**
  * When are WavefrontSupportingLine created in C++?
- * 
+ *
  * During KineticTriangulation::create_supporting_lines: This is the primary
  * creation point. When the code iterates through the faces of the initial
  * BasicTriangulation (the CDT result) and identifies a constrained edge (i.e.,
@@ -18,7 +18,7 @@ import com.github.micycle1.surferj.SurfConstants;
  * WavefrontSupportingLine>(u, v, weight) is created. This
  * WavefrontSupportingLine object captures the infinite line containing the
  * segment (u, v) and its associated weight.
- * 
+ *
  * During KineticTriangulation::create_bevels_at_vertex (Potentially): When
  * handling degree-1 vertices (and potentially other reflex vertices requiring
  * beveling, though that part is complex and we're ignoring it for now), the
@@ -33,14 +33,14 @@ import com.github.micycle1.surferj.SurfConstants;
  * WavefrontSupportingLine> as the original edge they came from. The underlying
  * supporting line (and its motion rule) doesn't change, only the endpoints
  * tracked by the WavefrontEdge and its WavefrontVertex objects change.
- * 
- * 
+ *
+ *
  * Relationship with WavefrontEdge:
- * 
+ *
  * Yes, the other LLM is correct. In the C++ code, WavefrontEdge contains a
  * shared_ptr<const WavefrontSupportingLine> (accessed via the l() method). This
  * is the standard pattern.
- * 
+ *
  * Your Java WavefrontEdge class absolutely needs to contain a
  * WavefrontSupportingLine member. It should be created within the WavefrontEdge
  * constructor using the initial segment data and weight.
@@ -120,7 +120,7 @@ public class WavefrontSupportingLine {
 	/**
 	 * Gets the position of the supporting line offset by time t. The offset is
 	 * applied along the weighted normal direction.
-	 * 
+	 *
 	 * @param t time
 	 * @return The offset line segment (endpoints translated by normal * t)
 	 */

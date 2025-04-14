@@ -159,12 +159,15 @@ public class CollapseSpec implements Comparable<CollapseSpec> {
 	@Override
 	public int compareTo(CollapseSpec other) {
 		// Handle NEVER cases first (always highest time)
-		if (this.type == CollapseType.NEVER && other.type == CollapseType.NEVER)
+		if (this.type == CollapseType.NEVER && other.type == CollapseType.NEVER) {
 			return 0;
-		if (this.type == CollapseType.NEVER)
+		}
+		if (this.type == CollapseType.NEVER) {
 			return 1; // this is later
-		if (other.type == CollapseType.NEVER)
+		}
+		if (other.type == CollapseType.NEVER) {
 			return -1; // other is later
+		}
 
 		// Compare time with tolerance
 		double timeDiff = this.time - other.time;
@@ -195,14 +198,18 @@ public class CollapseSpec implements Comparable<CollapseSpec> {
 	public String toString() {
 		StringBuilder sb = new StringBuilder("CollapseSpec{");
 		sb.append(type);
-		if (triangle != null)
+		if (triangle != null) {
 			sb.append(", tri=").append(triangle.id);
-		if (!Double.isNaN(time))
+		}
+		if (!Double.isNaN(time)) {
 			sb.append(", time=").append(String.format("%.6f", time));
-		if (relevantEdge != -1)
+		}
+		if (relevantEdge != -1) {
 			sb.append(", edge=").append(relevantEdge);
-		if (!Double.isNaN(secondaryKey))
+		}
+		if (!Double.isNaN(secondaryKey)) {
 			sb.append(", key=").append(String.format("%.4f", secondaryKey));
+		}
 		sb.append('}');
 		return sb.toString();
 	}
@@ -210,10 +217,12 @@ public class CollapseSpec implements Comparable<CollapseSpec> {
 	// Basic equals for testing (uses compareTo == 0)
 	@Override
 	public boolean equals(Object o) {
-		if (this == o)
+		if (this == o) {
 			return true;
-		if (o == null || getClass() != o.getClass())
+		}
+		if (o == null || getClass() != o.getClass()) {
 			return false;
+		}
 		CollapseSpec that = (CollapseSpec) o;
 		// Equality based on the comparison logic defined in compareTo
 		return this.compareTo(that) == 0 && Objects.equals(triangle, that.triangle); // Include triangle ID check for stricter test equality

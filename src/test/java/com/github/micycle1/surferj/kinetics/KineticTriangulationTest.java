@@ -1,21 +1,32 @@
 package com.github.micycle1.surferj.kinetics;
 
-import org.junit.jupiter.api.Test;
-import static org.junit.jupiter.api.Assertions.*;
-
-import org.locationtech.jts.geom.*;
-import org.locationtech.jts.io.ParseException;
-import org.locationtech.jts.io.WKTReader;
-import org.locationtech.jts.math.Vector2D;
-
-import com.github.micycle1.surferj.kinetics.WavefrontVertex.InfiniteSpeedType;
-import com.github.micycle1.surferj.kinetics.WavefrontVertex.VertexAngle;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
+
+import org.junit.jupiter.api.Test;
+import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.geom.LineSegment;
+import org.locationtech.jts.geom.LineString;
+import org.locationtech.jts.geom.Point;
+import org.locationtech.jts.geom.Polygon;
+import org.locationtech.jts.io.ParseException;
+import org.locationtech.jts.io.WKTReader;
+import org.locationtech.jts.math.Vector2D;
+
+import com.github.micycle1.surferj.kinetics.WavefrontVertex.InfiniteSpeedType;
+import com.github.micycle1.surferj.kinetics.WavefrontVertex.VertexAngle;
 
 /**
  * Test data structure initialisation (links, etc) and geometry (orientation of
@@ -535,12 +546,14 @@ public class KineticTriangulationTest {
 					// Check vertex back-references to edge
 					assertNotNull(v1);
 					assertNotNull(v2);
-					if (!v1.isInfinite)
+					if (!v1.isInfinite) {
 						assertTrue(v1.getIncidentEdge(0) == wavefront || v1.getIncidentEdge(1) == wavefront,
 								"Vertex " + v1 + " doesn't reference incident edge " + wavefront.id);
-					if (!v2.isInfinite)
+					}
+					if (!v2.isInfinite) {
 						assertTrue(v2.getIncidentEdge(0) == wavefront || v2.getIncidentEdge(1) == wavefront,
 								"Vertex " + v2 + " doesn't reference incident edge " + wavefront.id);
+					}
 
 				}
 			}
@@ -548,8 +561,9 @@ public class KineticTriangulationTest {
 
 		// Validate vertex references to edges
 		for (WavefrontVertex v : kt.getVertices()) {
-			if (v.isInfinite)
+			if (v.isInfinite) {
 				continue;
+			}
 			WavefrontEdge e0 = v.getIncidentEdge(0);
 			WavefrontEdge e1 = v.getIncidentEdge(1);
 			assertNotNull(e0, "Vertex " + v + " missing edge 0");

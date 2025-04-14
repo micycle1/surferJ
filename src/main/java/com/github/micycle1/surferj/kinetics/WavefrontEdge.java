@@ -7,10 +7,10 @@ import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.LineSegment;
 import org.locationtech.jts.math.Vector2D;
 
+import com.github.micycle1.surferj.SurfConstants;
 import com.github.micycle1.surferj.collapse.CollapseSpec;
 import com.github.micycle1.surferj.collapse.EdgeCollapseSpec;
 import com.github.micycle1.surferj.collapse.EdgeCollapseType;
-import com.github.micycle1.surferj.SurfConstants;
 
 public class WavefrontEdge {
 
@@ -119,10 +119,12 @@ public class WavefrontEdge {
 	}
 
 	public WavefrontVertex getVertex(int index) {
-		if (index == 0)
+		if (index == 0) {
 			return vertex0;
-		if (index == 1)
+		}
+		if (index == 1) {
 			return vertex1;
+		}
 		throw new IndexOutOfBoundsException("WavefrontEdge vertex index must be 0 or 1, got: " + index);
 	}
 
@@ -155,7 +157,7 @@ public class WavefrontEdge {
 
 	/**
 	 * Sets the incident triangle for this edge. Also invalidates the collapse spec.
-	 * 
+	 *
 	 * @param triangle The new incident triangle.
 	 */
 	public void setIncidentTriangle(KineticTriangle triangle) {
@@ -178,8 +180,9 @@ public class WavefrontEdge {
 	 * @param v     The vertex to set. Must not be null.
 	 */
 	public void setVertexRaw(int index, WavefrontVertex v) {
-		if (v == null)
+		if (v == null) {
 			throw new NullPointerException("Cannot set null vertex for edge " + id);
+		}
 		boolean changed = false;
 		if (index == 0) {
 			if (this.vertex0 != v) {
@@ -208,8 +211,9 @@ public class WavefrontEdge {
 	 * @param v     The vertex to set. Must not be null.
 	 */
 	public void setVertexAndUpdateAdj(int index, WavefrontVertex v) {
-		if (v == null)
+		if (v == null) {
 			throw new NullPointerException("Cannot set null vertex for edge " + id);
+		}
 
 		// Determine the corresponding index in the vertex's wavefront array
 		// vertex0 (edge index 0) corresponds to vertex.wavefronts[1] (CW edge)
@@ -312,7 +316,7 @@ public class WavefrontEdge {
 			invalidateCollapseSpec();
 		}
 	}
-	
+
 	public void setVerticesRaw(WavefrontVertex v0, WavefrontVertex v1) {
 		// Ensure the vertices match the segment coordinates conceptually
 		if (v0 != null && v1 != null && !v0.isInfinite && !v1.isInfinite) {
@@ -413,7 +417,7 @@ public class WavefrontEdge {
 	/**
 	 * Checks if the edge endpoints are moving parallel (resulting in ALWAYS or
 	 * NEVER collapse).
-	 * 
+	 *
 	 * @param timeNow The current simulation time.
 	 * @return true if the edge collapse type is ALWAYS or NEVER.
 	 */
@@ -426,7 +430,7 @@ public class WavefrontEdge {
 	/**
 	 * Gets the EdgeCollapseSpec, using cache if valid for the given time, otherwise
 	 * computes and caches it.
-	 * 
+	 *
 	 * @param timeNow The current simulation time.
 	 * @return The EdgeCollapseSpec.
 	 */
@@ -457,7 +461,7 @@ public class WavefrontEdge {
 	/**
 	 * Creates a CollapseSpec suitable for the EventQueue based on this edge's
 	 * potential collapse.
-	 * 
+	 *
 	 * @param component           The component ID.
 	 * @param timeNow             Current simulation time.
 	 * @param collapsingEdgeIndex The index (0, 1, or 2) this edge corresponds to
@@ -538,10 +542,12 @@ public class WavefrontEdge {
 
 	@Override
 	public boolean equals(Object obj) {
-		if (this == obj)
+		if (this == obj) {
 			return true;
-		if (obj == null || getClass() != obj.getClass())
+		}
+		if (obj == null || getClass() != obj.getClass()) {
 			return false;
+		}
 		WavefrontEdge other = (WavefrontEdge) obj;
 		return id == other.id;
 	}
@@ -558,7 +564,7 @@ public class WavefrontEdge {
 	 * related to computational geometry or computer graphics. It takes a
 	 * currentTime parameter (the current simulation time) and returns an
 	 * EdgeCollapseSpec object, which specifies:
-	 * 
+	 *
 	 * Type: NEVER (won’t collapse), ALWAYS (currently collapsed), or FUTURE (will
 	 * collapse at a specific time). Time: The time of collapse (or Double.NaN if
 	 * not applicable). The method uses the initial positions (p0, p1) and
@@ -740,7 +746,7 @@ public class WavefrontEdge {
 	 * handling, collinear cases, and time computation) while allowing minor
 	 * improvements like better error handling or precision tolerance, as long as
 	 * they don’t deviate from the C++ logic.
-	 * 
+	 *
 	 * @param currentTime
 	 * @return
 	 */

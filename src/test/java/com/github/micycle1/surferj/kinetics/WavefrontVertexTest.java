@@ -1,11 +1,10 @@
 package com.github.micycle1.surferj.kinetics;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.locationtech.jts.geom.Coordinate;
-import com.github.micycle1.surferj.kinetics.WavefrontEdge;
-import com.github.micycle1.surferj.kinetics.WavefrontVertex;
-import org.junit.jupiter.api.BeforeEach;
 import org.locationtech.jts.geom.LineSegment;
 
 public class WavefrontVertexTest {
@@ -25,8 +24,9 @@ public class WavefrontVertexTest {
 	// Helper to create edges and link incident pointers implicitly via
 	// setVerticesAndUpdateAdj
 	private WavefrontEdge createEdge(WavefrontVertex vA, WavefrontVertex vB, double weight) {
-		if (vA == null || vB == null)
+		if (vA == null || vB == null) {
 			throw new NullPointerException("Cannot create edge with null vertex");
+		}
 		LineSegment seg = new LineSegment(vA.getInitialPosition(), vB.getInitialPosition());
 		WavefrontEdge edge = new WavefrontEdge(seg, weight);
 		edge.setVerticesAndUpdateAdj(vA, vB); // Links edge to vertices and vice-versa

@@ -1,8 +1,10 @@
 package com.github.micycle1.surferj.collapse;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -13,8 +15,6 @@ import com.github.micycle1.surferj.kinetics.WavefrontEdge;
 import com.github.micycle1.surferj.kinetics.WavefrontVertex;
 import com.github.micycle1.surferj.kinetics.WavefrontVertex.InfiniteSpeedType;
 import com.github.micycle1.surferj.kinetics.WavefrontVertex.VertexAngle;
-
-import java.lang.reflect.Field; // For checking defaults if needed
 
 /**
  * Unit tests for the WavefrontVertex class.
@@ -47,8 +47,9 @@ public class WavefrontVertexTest2 {
 	// Helper to create a basic edge (doesn't handle incident triangle etc.)
 	// Assumes WavefrontEdge constructor takes LineSegment and weight
 	private WavefrontEdge createTestEdge(WavefrontVertex v0, WavefrontVertex v1, double weight) {
-		if (v0 == null || v1 == null)
+		if (v0 == null || v1 == null) {
 			throw new NullPointerException("Null vertex for edge");
+		}
 		LineSegment seg = new LineSegment(v0.initialPosition, v1.initialPosition);
 		WavefrontEdge edge = new WavefrontEdge(seg, weight);
 		// Crucially link vertices back to edge FOR THE TEST SETUP
