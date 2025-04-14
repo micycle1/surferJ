@@ -4,6 +4,8 @@ import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.LineSegment;
 import org.locationtech.jts.math.Vector2D;
 
+import com.github.micycle.surferj2.SurfConstants;
+
 /**
  * When are WavefrontSupportingLine created in C++?
  * 
@@ -49,10 +51,10 @@ public class WavefrontSupportingLine {
 	private final double weight;
 	private final Vector2D normalDirection; /* arbitrary length, perpendicular to line direction */
 	private final Vector2D normalUnit; /* unit length */
-	private final Vector2D normal; /* weighted (normalUnit * weight) */
+	private final Vector2D normal; // WEIGHTED unit-normal
 
 	public WavefrontSupportingLine(double p1x, double p1y, double p2x, double p2y) {
-		this(new LineSegment(p1x, p1y, p2x, p2y), 1);
+		this(new LineSegment(p1x, p1y, p2x, p2y), 1.0); // NOTE default weight of 1.0
 	}
 
 	public WavefrontSupportingLine(LineSegment segment, double weight) {
@@ -61,7 +63,7 @@ public class WavefrontSupportingLine {
 
 		// Compute direction vector of the line (from p0 to p1)
 		Vector2D directionVector = new Vector2D(segment.p0, segment.p1);
-		if (directionVector.length() < 1e-12) {
+		if (directionVector.lengthSquared() < SurfConstants.ZERO_DIST_SQ) {
 			throw new IllegalArgumentException("Cannot create supporting line for zero-length segment: " + segment);
 		}
 
@@ -109,13 +111,20 @@ public class WavefrontSupportingLine {
 	}
 
 	/**
+	 * The wavefront line after it has moved for time t=1.
+	 */
+	public LineSegment lineAtOne() {
+		return getOffsetSegment(1);
+	}
+
+	/**
 	 * Gets the position of the supporting line offset by time t. The offset is
 	 * applied along the weighted normal direction.
 	 * 
 	 * @param t time
 	 * @return The offset line segment (endpoints translated by normal * t)
 	 */
-	public LineSegment getOffsetSegment(double t) {
+	private LineSegment getOffsetSegment(double t) {
 		Vector2D offset = normal.multiply(t);
 		Coordinate p0Offset = Vector2D.create(segment.p0).add(offset).toCoordinate();
 		Coordinate p1Offset = Vector2D.create(segment.p1).add(offset).toCoordinate();
@@ -129,5 +138,9 @@ public class WavefrontSupportingLine {
 
 	public boolean isVertical() {
 		return segment.isVertical();
+	}
+
+	public boolean isVertical(double epsilon) {
+		return Math.abs(segment.p0.x - segment.p1.x) < epsilon;
 	}
 }

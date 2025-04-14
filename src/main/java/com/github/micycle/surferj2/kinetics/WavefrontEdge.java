@@ -5,7 +5,9 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.locationtech.jts.algorithm.Orientation;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.LineSegment;
+import org.locationtech.jts.math.Vector2D;
 
+import com.github.micycle.surferj2.SurfConstants;
 import com.github.micycle.surferj2.collapse.CollapseSpec;
 import com.github.micycle.surferj2.collapse.EdgeCollapseSpec;
 import com.github.micycle.surferj2.collapse.EdgeCollapseType;
@@ -310,6 +312,24 @@ public class WavefrontEdge {
 			invalidateCollapseSpec();
 		}
 	}
+	
+	public void setVerticesRaw(WavefrontVertex v0, WavefrontVertex v1) {
+		// Ensure the vertices match the segment coordinates conceptually
+		if (v0 != null && v1 != null && !v0.isInfinite && !v1.isInfinite) {
+			Coordinate c0 = getSegment().p0;
+			Coordinate c1 = getSegment().p1;
+			// Check if vertices align with segment ends, allowing for swapped order
+			boolean match1 = (v0.initialPosition.equals2D(c0) && v1.initialPosition.equals2D(c1));
+			boolean match2 = (v0.initialPosition.equals2D(c1) && v1.initialPosition.equals2D(c0));
+			if (!match1 && !match2) {
+				throw new IllegalArgumentException("Vertices " + v0 + ", " + v1 + " do not match edge segment ends " + getSegment());
+			}
+		} else if (v0 == null || v1 == null) {
+			throw new IllegalArgumentException("Cannot set null vertices for WavefrontEdge");
+		}
+		this.vertex0 = v0;
+		this.vertex1 = v1;
+	}
 
 	/**
 	 * Updates the incident edge pointers (`wavefronts` array) for the current
@@ -526,64 +546,258 @@ public class WavefrontEdge {
 		return id == other.id;
 	}
 
-	// Enhanced computeCollapse to match C++ logic
+	/**
+	 * Computes the collapse specification for this edge based on the relative
+	 * movement of its endpoint vertices. Mirrors the logic of the C++
+	 * WavefrontEdge::compute_collapse. Calculates the physical collapse time, which
+	 * might be in the past relative to currentTime. The caller is responsible for
+	 * interpreting this.
+	 * <p>
+	 * The computeCollapse method determines when or if an edge, defined by two
+	 * vertices (vertex0 and vertex1), will collapse in a 2D simulation, likely
+	 * related to computational geometry or computer graphics. It takes a
+	 * currentTime parameter (the current simulation time) and returns an
+	 * EdgeCollapseSpec object, which specifies:
+	 * 
+	 * Type: NEVER (won’t collapse), ALWAYS (currently collapsed), or FUTURE (will
+	 * collapse at a specific time). Time: The time of collapse (or Double.NaN if
+	 * not applicable). The method uses the initial positions (p0, p1) and
+	 * velocities (v0, v1) of the vertices to predict collapse behavior, considering
+	 * their relative orientation and motion.
+	 *
+	 * @param currentTime The current simulation time (used for context, e.g., in
+	 *                    ALWAYS case, but NOT for filtering).
+	 * @return An EdgeCollapseSpec indicating the type and time of collapse.
+	 * @throws IllegalStateException if vertices are not set.
+	 */
 	public EdgeCollapseSpec computeCollapse(double currentTime) {
 		WavefrontVertex wfv0 = vertex0;
 		WavefrontVertex wfv1 = vertex1;
 		if (wfv0 == null || wfv1 == null) {
-			throw new IllegalStateException("Vertices must be set to compute collapse");
+			throw new IllegalStateException("Vertices must be set to compute collapse for Edge " + id);
 		}
 
-		Coordinate v0 = wfv0.getVelocity();
-		Coordinate v1 = wfv1.getVelocity();
+		// Use initial positions and velocities for the core calculation,
+		// matching the C++ logic.
 		Coordinate p0 = wfv0.getInitialPosition();
 		Coordinate p1 = wfv1.getInitialPosition();
+		Vector2D v0 = Vector2D.create(wfv0.getVelocity()); // Assuming getVelocity() returns (0,0) for static/infinite
+		Vector2D v1 = Vector2D.create(wfv1.getVelocity());
 
-		// Use JTS Orientation.index() to determine orientation
-		int orient = Orientation.index(p0, p1, new Coordinate(p0.x + v0.x, p0.y + v0.y));
+		// Check relative orientation of velocities (v0 relative to v1, or vice-versa?)
+		// C++ CGAL::orientation(v0, v1) checks orientation of vector v1 relative to v0
+		// (origin implicit).
+		// This checks if v1 is left/right/collinear with v0.
+		// Let's use cross product: v0.x * v1.y - v0.y * v1.x
+		double crossProduct = v0.getX() * v1.getY() - v0.getY() * v1.getX();
 		int orientation;
-		switch (orient) {
-			case org.locationtech.jts.algorithm.Orientation.LEFT :
-				orientation = Orientation.LEFT;
-				break;
-			case org.locationtech.jts.algorithm.Orientation.RIGHT :
-				orientation = Orientation.RIGHT;
-				break;
-			case org.locationtech.jts.algorithm.Orientation.COLLINEAR :
-			default :
-				orientation = Orientation.COLLINEAR;
-				break;
+
+		if (Math.abs(crossProduct) < SurfConstants.ZERO_AREA) { // Use an appropriate tolerance for cross product (area)
+			orientation = Orientation.COLLINEAR;
+		} else if (crossProduct > 0) {
+			orientation = Orientation.LEFT; // v1 is left of v0
+		} else {
+			orientation = Orientation.RIGHT; // v1 is right of v0
+		}
+
+		if (orientation != Orientation.LEFT) {
+			// Velocities are collinear or v1 is to the right of v0 (implying divergence or
+			// parallel movement away?)
+			// C++ logic: If not LEFT_TURN -> PAST or (NEVER/ALWAYS if COLLINEAR)
+			if (orientation == Orientation.RIGHT) {
+				// C++ returns PAST. This means they will never converge *in the future*
+				// according to this velocity orientation check. Let's map to NEVER
+				// as PAST isn't very informative without a time.
+				return new EdgeCollapseSpec(EdgeCollapseType.NEVER, Double.NaN);
+				// Or maybe keep PAST if needed upstream? Let's use NEVER for simplicity.
+				// return new EdgeCollapseSpec(EdgeCollapseType.PAST, Double.NaN);
+			} else { // COLLINEAR
+				// Check initial distance. If initially collapsed, it's ALWAYS. Otherwise NEVER.
+				// Note: C++ checks sqdist == CORE_ZERO based on initial positions.
+				double initialSqDist = p0.distanceSq(p1);
+				if (initialSqDist < SurfConstants.ZERO_DIST_SQ) { // Use squared distance tolerance
+					// Need to verify they aren't moving apart despite being collinear
+					Vector2D relPos = Vector2D.create(p1).subtract(Vector2D.create(p0));
+					Vector2D relVel = v1.subtract(v0);
+					if (relPos.dot(relVel) >= -SurfConstants.ZERO_SPEED_SQ) { // Check if moving apart (dot >= 0) or static
+						// If they start collapsed and are static or moving apart (relative vel along
+						// axis), they stay collapsed
+						return new EdgeCollapseSpec(EdgeCollapseType.ALWAYS, currentTime); // Return current time as reference
+					} else {
+						// Started collapsed but moving towards each other (impossible if truly
+						// collapsed?)
+						// This case is tricky. Assume ALWAYS if initially zero dist.
+						System.err.println("Warning: Edge " + id + " initially collapsed but velocities are convergent?");
+						return new EdgeCollapseSpec(EdgeCollapseType.ALWAYS, currentTime);
+					}
+				} else {
+					// Check if moving towards each other
+					Vector2D relPos = Vector2D.create(p1).subtract(Vector2D.create(p0));
+					Vector2D relVel = v1.subtract(v0);
+					// If velocities are zero, never collapse. If non-zero but parallel, check if
+					// converging.
+					if (relVel.lengthSquared() < SurfConstants.ZERO_SPEED_SQ) { // Velocities are effectively the same
+						return new EdgeCollapseSpec(EdgeCollapseType.NEVER, Double.NaN);
+					}
+					if (relPos.dot(relVel) < -SurfConstants.ZERO_SPEED_SQ) { // Dot product negative -> Converging
+						// Calculate time to collapse based on 1D motion along the line
+						// Time = - (relPos . relVel) / (relVel . relVel) ? No, that's projection time.
+						// Time = distance / relative_speed = |relPos| / |relVel| (if moving directly
+						// towards)
+						// Let's use the C++ projection method for consistency if needed, otherwise
+						// assume NEVER for now.
+						// The C++ code relies on the projection logic below even for collinear cases?
+						// If v0 and v1 are collinear, wfvs_delta might be zero.
+						// Revisit this: Let's assume for now, if collinear and not initially collapsed,
+						// NEVER.
+						// This might be wrong if they are collinear and moving towards each other.
+						// Let's recalculate using the projection logic from the C++ `else` block.
+						// Fall through to the projection logic.
+					} else {
+						// Collinear, not collapsed, not converging -> NEVER
+						return new EdgeCollapseSpec(EdgeCollapseType.NEVER, Double.NaN);
+					}
+				}
+			}
+		}
+
+		// --- Case: Orientation == LEFT (Potentially Converging) ---
+		// Calculate collapse time using projection method from C++.
+		// This finds time 't' where Pi(t) projected onto some axis are equal.
+		// t = (P1_proj(0) - P0_proj(0)) / (V0_proj - V1_proj)
+		// t = edge_delta / wfvs_delta
+
+		double edge_delta; // Difference in projected initial positions
+		double wfvs_delta; // Difference in projected velocities (V0_proj - V1_proj)
+
+		// Use projection axis based on supporting line (prefer non-vertical)
+		boolean isVertical = supportingLine.isVertical(SurfConstants.VERTICAL_SLOPE_TOL); // Use tolerance
+
+		if (!isVertical) {
+			// Project onto X-axis
+			edge_delta = p1.x - p0.x;
+			wfvs_delta = v0.getX() - v1.getX(); // Note: C++ uses v0.x() - v1.x()
+		} else {
+			// Project onto Y-axis
+			edge_delta = p1.y - p0.y;
+			wfvs_delta = v0.getY() - v1.getY(); // Note: C++ uses v0.y() - v1.y()
+		}
+
+		// Check for zero relative velocity along projection axis
+		if (Math.abs(wfvs_delta) < SurfConstants.ZERO_SPEED) {
+			// If projected velocities are the same, they maintain their projected distance.
+			// Check if they were initially collapsed along this projection.
+			if (Math.abs(edge_delta) < SurfConstants.ZERO_DIST) {
+				// They start at same projected position and move at same projected speed.
+				// This doesn't guarantee collapse, only that they are relatively static along
+				// this axis.
+				// Need to check the *other* axis or actual distance.
+				// If orientation was LEFT, they can't be fully collapsed initially unless
+				// edge_delta=0 AND crossProduct=0.
+				// This case implies parallel movement. Return NEVER.
+				return new EdgeCollapseSpec(EdgeCollapseType.NEVER, Double.NaN);
+			} else {
+				// Maintain separation along this axis -> NEVER collapse by this projection
+				// method.
+				return new EdgeCollapseSpec(EdgeCollapseType.NEVER, Double.NaN);
+			}
+		}
+
+		// Calculate potential collapse time
+		double time = edge_delta / wfvs_delta;
+
+		// *** CHANGE HERE: Do not compare with currentTime or throw exception ***
+		// The calculated 'time' is the physical time the projected coordinates
+		// coincide.
+
+		// Determine midpoint at collapse time 'time'
+		Coordinate collapseP0 = wfv0.getPositionAt(time);
+		Coordinate collapseP1 = wfv1.getPositionAt(time);
+
+		// Sanity check: the distance at this time should be very small IF the
+		// orientation was LEFT
+		// and wfvs_delta was non-zero. This projection method finds when they align on
+		// one axis.
+		double collapseDistSq = collapseP0.distanceSq(collapseP1);
+		if (collapseDistSq > SurfConstants.ZERO_DIST_SQ * 100) { // Use larger tolerance?
+			System.err.println(
+					"Warning: Edge " + id + " collapse time " + time + " calculated via projection results in non-zero distance squared: " + collapseDistSq);
+			// This might happen if velocities were nearly parallel or initial orientation
+			// check was borderline.
+			// Treat as NEVER? Or proceed cautiously? Let's return NEVER.
+			return new EdgeCollapseSpec(EdgeCollapseType.NEVER, Double.NaN);
+		}
+
+		Coordinate collapsePoint = new Coordinate((collapseP0.x + collapseP1.x) / 2.0, (collapseP0.y + collapseP1.y) / 2.0);
+		boolean sameInitial = wfv0.getInitialPosition().equals2D(wfv1.getInitialPosition()); // Needed for spec
+
+		// Return the calculated time, regardless of whether it's past/present/future.
+		return new EdgeCollapseSpec(EdgeCollapseType.FUTURE, time); // Use FUTURE type as placeholder
+	}
+
+	/**
+	 * The goal is to maintain strict equivalence in outcomes (e.g., orientation
+	 * handling, collinear cases, and time computation) while allowing minor
+	 * improvements like better error handling or precision tolerance, as long as
+	 * they don’t deviate from the C++ logic.
+	 * 
+	 * @param currentTime
+	 * @return
+	 */
+	public EdgeCollapseSpec computeCollapseSimple(double currentTime) {
+		WavefrontVertex wfv0 = vertex0;
+		WavefrontVertex wfv1 = vertex1;
+		if (wfv0 == null || wfv1 == null) {
+			throw new IllegalStateException("Vertices must be set to compute collapse for Edge " + id);
+		}
+
+		Coordinate p0 = wfv0.getInitialPosition();
+		Coordinate p1 = wfv1.getInitialPosition();
+		Vector2D v0 = Vector2D.create(wfv0.getVelocity());
+		Vector2D v1 = Vector2D.create(wfv1.getVelocity());
+
+		double crossProduct = v0.getX() * v1.getY() - v0.getY() * v1.getX();
+		int orientation;
+
+		if (Math.abs(crossProduct) < SurfConstants.ZERO_AREA) {
+			orientation = Orientation.COLLINEAR;
+		} else if (crossProduct > 0) {
+			orientation = Orientation.LEFT;
+		} else {
+			orientation = Orientation.RIGHT;
 		}
 
 		if (orientation != Orientation.LEFT) {
 			if (orientation == Orientation.RIGHT) {
 				return new EdgeCollapseSpec(EdgeCollapseType.PAST, Double.NaN);
 			} else { // COLLINEAR
-				double sqDist = p0.distance(p1);
-				if (sqDist < 1e-9) {
+				double initialSqDist = p0.distanceSq(p1);
+				if (initialSqDist < SurfConstants.ZERO_DIST_SQ) {
 					return new EdgeCollapseSpec(EdgeCollapseType.ALWAYS, currentTime);
 				} else {
 					return new EdgeCollapseSpec(EdgeCollapseType.NEVER, Double.NaN);
 				}
 			}
 		} else {
-			// Project onto edge direction
-			double edgeDelta, wfvsDelta;
-			if (!supportingLine.isVertical()) {
-				edgeDelta = p1.x - p0.x;
-				wfvsDelta = v0.x - v1.x;
+			double edge_delta;
+			double wfvs_delta;
+			boolean isVertical = supportingLine.isVertical(SurfConstants.VERTICAL_SLOPE_TOL);
+
+			if (!isVertical) {
+				edge_delta = p1.x - p0.x;
+				wfvs_delta = v0.getX() - v1.getX();
 			} else {
-				edgeDelta = p1.y - p0.y;
-				wfvsDelta = v0.y - v1.y;
+				edge_delta = p1.y - p0.y;
+				wfvs_delta = v0.getY() - v1.getY();
 			}
 
-			if (Math.abs(edgeDelta) < 1e-9 || Math.abs(wfvsDelta) < 1e-9) {
+			if (Math.abs(wfvs_delta) < SurfConstants.ZERO_SPEED) {
 				throw new IllegalStateException("Invalid edge or velocity delta");
 			}
 
-			double time = edgeDelta / wfvsDelta;
-			if (time < currentTime - 1e-9) {
-				throw new IllegalStateException("Computed collapse time is in the past");
+			double time = edge_delta / wfvs_delta;
+			if (time < currentTime - SurfConstants.TIME_TOL) {
+				return new EdgeCollapseSpec(EdgeCollapseType.PAST, Double.NaN);
 			}
 			return new EdgeCollapseSpec(EdgeCollapseType.FUTURE, time);
 		}

@@ -253,7 +253,7 @@ public class KineticTriangle {
 		invalidateCollapseSpec();
 	}
 
-	public void setNeighbor(int index, KineticTriangle neighbor) {
+	public void setNeighborRaw(int index, KineticTriangle neighbor) {
 		if (index < 0 || index >= 3) {
 			throw new IllegalArgumentException("Invalid neighbor index: " + index);
 		}
@@ -295,9 +295,9 @@ public class KineticTriangle {
 	}
 
 	public void setNeighbors(KineticTriangle n0, KineticTriangle n1, KineticTriangle n2) {
-		setNeighbor(0, n0);
-		setNeighbor(1, n1);
-		setNeighbor(2, n2);
+		setNeighborRaw(0, n0);
+		setNeighborRaw(1, n1);
+		setNeighborRaw(2, n2);
 	}
 
 	public void setWavefronts(WavefrontEdge w0, WavefrontEdge w1, WavefrontEdge w2) {
@@ -473,7 +473,7 @@ public class KineticTriangle {
 		return this.cachedCollapseSpec;
 	}
 
-	private CollapseSpec calculateCollapseSpec(double currentTime) {
+	CollapseSpec calculateCollapseSpec(double currentTime) {
 		// Added null check for vertices early on, might be needed if construction is
 		// delayed
 		if (vertices[0] == null || vertices[1] == null || vertices[2] == null) {
@@ -682,7 +682,7 @@ public class KineticTriangle {
 		// Check determinant sign at current time (should be >= 0 within tolerance)
 		double detNow = determinant.evaluate(currentTime);
 		if (detNow < -SurfConstants.ZERO_AREA_SQ) {
-			System.err.println("Warning: Triangle " + getName() + " has negative area " + detNow + " at time " + currentTime);
+			System.err.println("Warning: Triangle " + getName() + " has negative area " + detNow + " at time " + currentTime + ". (triangle's orientation fipped earlier?)");
 			// Depending on strictness, could return INVALID or proceed cautiously.
 		}
 
@@ -763,7 +763,7 @@ public class KineticTriangle {
 		// Check determinant sign at current time
 		double detNow = determinant.evaluate(currentTime);
 		if (detNow < -SurfConstants.ZERO_AREA_SQ) {
-			System.err.println("Warning: Triangle " + getName() + " has negative area " + detNow + " at time " + currentTime);
+			System.err.println("Warning: Triangle " + getName() + " has negative area " + detNow + " at time " + currentTime +". (triangle's orientation fipped earlier?)");
 		}
 
 		return calculateFlipEvent(currentTime, determinant);
@@ -942,7 +942,7 @@ public class KineticTriangle {
 	 * @return The Polynomial for 2 * signed area.
 	 * @throws IllegalStateException if any vertex is null.
 	 */
-	private Polynomial computeDeterminantPolynomial() {
+	Polynomial computeDeterminantPolynomial() {
 		if (vertices[0] == null || vertices[1] == null || vertices[2] == null) {
 			throw new IllegalStateException("Cannot compute determinant for incomplete triangle " + getName());
 		}
@@ -988,7 +988,7 @@ public class KineticTriangle {
 	}
 
 	/** Static version to compute determinant polynomial from three vertices. */
-	private static Polynomial computeDeterminantFromVertices(WavefrontVertex vert0, WavefrontVertex vert1, WavefrontVertex vert2) {
+	public static Polynomial computeDeterminantFromVertices(WavefrontVertex vert0, WavefrontVertex vert1, WavefrontVertex vert2) {
 		if (vert0 == null || vert1 == null || vert2 == null) {
 			throw new NullPointerException("Cannot compute determinant from null vertices.");
 		}
@@ -1420,7 +1420,7 @@ public class KineticTriangle {
 		}
 	}
 
-	private static VertexOnSupportingLineResult getTimeVertexOnSupportingLine(WavefrontVertex v, WavefrontSupportingLine line) {
+	static VertexOnSupportingLineResult getTimeVertexOnSupportingLine(WavefrontVertex v, WavefrontSupportingLine line) {
 		if (v == null || line == null) {
 			throw new NullPointerException("Null vertex or line in getTimeVertexOnSupportingLine");
 		}
@@ -1486,12 +1486,11 @@ public class KineticTriangle {
 		return new VertexOnSupportingLineResult(collapseTime, type);
 	}
 
-	private static Sign edgeIsFasterThanVertex(WavefrontVertex v, WavefrontSupportingLine line) {
+	public static Sign edgeIsFasterThanVertex(WavefrontVertex v, WavefrontSupportingLine line) {
 		if (v == null || line == null) {
 			throw new NullPointerException("Null vertex or line in edgeIsFasterThanVertex");
 		}
 
-		final Vector2D n = line.getNormal();
 		final Vector2D n = line.getNormalDirection();
 		final double nSqLen = n.lengthSquared();
 		if (nSqLen < SurfConstants.ZERO_NORM_SQ) {
@@ -1650,7 +1649,7 @@ public class KineticTriangle {
 		this.wavefronts[edgeIndex] = nw_ccw_orig;
 		if (nn_ccw_orig != null) {
 			// Find where nn_ccw_orig pointed to n and update it to point to this
-			nn_ccw_orig.setNeighbor(nn_ccw_orig.indexOfNeighbor(n), this);
+			nn_ccw_orig.setNeighborRaw(nn_ccw_orig.indexOfNeighbor(n), this);
 		}
 		if (nw_ccw_orig != null) {
 			nw_ccw_orig.setIncidentTriangle(this);
@@ -1662,7 +1661,7 @@ public class KineticTriangle {
 		n.wavefronts[nEdgeIndex] = w_cw_orig;
 		if (n_cw_orig != null) {
 			// Find where n_cw_orig pointed to this and update it to point to n
-			n_cw_orig.setNeighbor(n_cw_orig.indexOfNeighbor(this), n);
+			n_cw_orig.setNeighborRaw(n_cw_orig.indexOfNeighbor(this), n);
 		}
 		if (w_cw_orig != null) {
 			w_cw_orig.setIncidentTriangle(n);
@@ -1836,7 +1835,7 @@ public class KineticTriangle {
 		}
 	}
 
-	enum Sign {
+	public enum Sign {
 		NEGATIVE, ZERO, POSITIVE
 	}
 

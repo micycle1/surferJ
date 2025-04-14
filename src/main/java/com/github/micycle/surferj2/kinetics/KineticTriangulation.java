@@ -152,7 +152,7 @@ public class KineticTriangulation {
 					// This edge is internal to the polygon's triangulation area.
 					if (neighborKt != null) {
 						// Link neighbors
-						currentKt.setNeighbor(edgeIndexInTriangle, neighborKt);
+						currentKt.setNeighborRaw(edgeIndexInTriangle, neighborKt);
 					} else {
 						// Internal edge with no valid neighbor inside the polygon area.
 						// This means the edge must lie on the boundary (e.g., hole boundary
@@ -239,13 +239,18 @@ public class KineticTriangulation {
 		}
 
 		// Final check for vertex incident edge consistency (optional, debug)
-		// for (WavefrontVertex wv : this.vertices) {
-		// if (!wv.isInfinite && (wv.getIncidentEdge(0) == null || wv.getIncidentEdge(1)
-		// == null)) {
-		// System.err.println("Warning: Vertex " + wv + " has incomplete incident
-		// edges.");
-		// }
-		// }
+//		for (WavefrontVertex wv : this.vertices) {
+//			if (!wv.isInfinite && (wv.getIncidentEdge(0) == null || wv.getIncidentEdge(1) == null)) {
+//				System.err.println("Warning: Vertex " + wv + " has incomplete incident edges.");
+//			}
+//		}
+		
+		// --- Pass 4: Calculate Vertex Geometry ---
+		for (WavefrontVertex wv : this.vertices) {
+		    if (!wv.isInfinite) {
+		        wv.recalculateGeometry(); // Calculate geometry now that all links are established
+		    }
+		}
 
 	}
 
@@ -386,10 +391,10 @@ public class KineticTriangulation {
 		WavefrontEdge wavefrontOfT1 = triangle.getWavefront((i + 1) % 3);
 
 		// Update edge i in triangle (now borders neighborOfN2 or has wavefrontOfN2)
-		triangle.setNeighbor(i, neighborOfN2);
+		triangle.setNeighborRaw(i, neighborOfN2);
 		triangle.setWavefront(i, wavefrontOfN2);
 		if (neighborOfN2 != null) {
-			neighborOfN2.setNeighbor(neighborOfN2.indexOfNeighbor(neighbor), triangle); // Update backlink
+			neighborOfN2.setNeighborRaw(neighborOfN2.indexOfNeighbor(neighbor), triangle); // Update backlink
 		}
 		if (wavefrontOfN2 != null) {
 			wavefrontOfN2.setIncidentTriangle(triangle);
@@ -397,10 +402,10 @@ public class KineticTriangulation {
 
 		// Update edge neighborEdgeIndex in neighbor (now borders neighborOfT1 or has
 		// wavefrontOfT1)
-		neighbor.setNeighbor(neighborEdgeIndex, neighborOfT1);
+		neighbor.setNeighborRaw(neighborEdgeIndex, neighborOfT1);
 		neighbor.setWavefront(neighborEdgeIndex, wavefrontOfT1);
 		if (neighborOfT1 != null) {
-			neighborOfT1.setNeighbor(neighborOfT1.indexOfNeighbor(triangle), neighbor); // Update backlink
+			neighborOfT1.setNeighborRaw(neighborOfT1.indexOfNeighbor(triangle), neighbor); // Update backlink
 		}
 		if (wavefrontOfT1 != null) {
 			wavefrontOfT1.setIncidentTriangle(neighbor);
@@ -408,9 +413,9 @@ public class KineticTriangulation {
 
 		// Update the edge between triangle and neighbor (indices (i+1)%3 in tri,
 		// (neighborEdgeIndex+1)%3 in neighbor)
-		triangle.setNeighbor((i + 1) % 3, neighbor);
+		triangle.setNeighborRaw((i + 1) % 3, neighbor);
 		triangle.setWavefront((i + 1) % 3, null);
-		neighbor.setNeighbor((neighborEdgeIndex + 1) % 3, triangle);
+		neighbor.setNeighborRaw((neighborEdgeIndex + 1) % 3, triangle);
 		neighbor.setWavefront((neighborEdgeIndex + 1) % 3, null);
 
 		// 4. Update WavefrontVertex edge incidence if needed (though setVertex should
@@ -638,7 +643,6 @@ public class KineticTriangulation {
 		Coordinate p0 = triangle.getCoordinate(0);
 		Coordinate p1 = triangle.getCoordinate(1);
 		Coordinate p2 = triangle.getCoordinate(2);
-		
 
 		// Check for degenerate triangles (collinear vertices) before centroid
 		// calculation
