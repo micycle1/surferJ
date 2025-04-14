@@ -1492,6 +1492,7 @@ public class KineticTriangle {
 		}
 
 		final Vector2D n = line.getNormal();
+		final Vector2D n = line.getNormalDirection();
 		final double nSqLen = n.lengthSquared();
 		if (nSqLen < SurfConstants.ZERO_NORM_SQ) {
 			System.err.println("Warning: Supporting line has near-zero normal vector in speed comparison: " + line);
