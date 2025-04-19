@@ -3,6 +3,7 @@ package com.github.micycle1.surferj.kinetics;
 import static com.github.micycle1.surferj.TriangulationUtils.ccw;
 import static com.github.micycle1.surferj.TriangulationUtils.cw;
 
+import java.util.Arrays;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -43,11 +44,13 @@ public class KineticTriangle {
 	// NOTE quite confident this is thoroughly implemented!
 	// NOTE good starting point to make other code
 
-	// private static final Logger log =
-	// LoggerFactory.getLogger(KineticTriangle.class); // Optional logging
+	// Static variables for stuck loop detection in get_generic_collapse_time() (as
+	// in C++)
+	private static double lastTime = Double.NEGATIVE_INFINITY;
+	private static int loopDetectionCount = 0;
+	private static final int LOOP_DETECTION_LIMIT = 1000;
+
 	private static final AtomicLong ID_COUNTER = new AtomicLong(0);
-	// private static final GeometryFactory GEOMETRY_FACTORY = new
-	// GeometryFactory(); // Not currently used
 
 	public final long id;
 	public int component; // Represents the polygon component the triangle belongs to. Simplified in some
@@ -1560,7 +1563,8 @@ public class KineticTriangle {
 
 		final Vector2D PQ = Vector2D.create(Q0).subtract(Vector2D.create(P0));
 
-		// NOTE dot, since CGAL::Vector_2<Kernel> overloads the multiplication operator *
+		// NOTE dot, since CGAL::Vector_2<Kernel> overloads the multiplication operator
+		// *
 		final double scaledDistance = n.dot(PQ);
 		final double scaledVertexSpeedNormal = n.dot(s);
 		final double scaledEdgeSpeedNormal = w * nLen;
@@ -1825,67 +1829,97 @@ public class KineticTriangle {
 	 *
 	 * @throws AssertionError if inconsistent.
 	 */
+	/**
+	 * Checks that this triangle’s local pointers (vertices, neighbors,
+	 * wavefront‐edges and their back‐links) form a consistent fan. Throws
+	 * IllegalStateException on any invariant violation.
+	 */
 	public void assertValid() {
-		// Comment out the body for production builds to avoid performance impact
-		/*
-		 * if (isDead) { return; } // Skip checks for dead triangles
-		 *
-		 * if (id < 0) throw new AssertionError(getName() + " has Invalid ID"); int
-		 * vertexCount = 0; for (int i = 0; i < 3; i++) { if (vertices[i] == null) throw
-		 * new AssertionError(getName() + " has null vertex at index " + i);
-		 * vertexCount++; } if (vertexCount != 3) throw new AssertionError(getName() +
-		 * " does not have 3 vertices");
-		 *
-		 * for (int i = 0; i < 3; ++i) { boolean hasNeighbor = neighbors[i] != null;
-		 * boolean hasWavefront = wavefronts[i] != null; if (!(hasNeighbor ^
-		 * hasWavefront)) throw new AssertionError(getName() + " edge " + i +
-		 * " has both/neither neighbor (" + (hasNeighbor ? neighbors[i].id : "null") +
-		 * ") and wavefront (" + (hasWavefront ? wavefronts[i].id : "null") + ")");
-		 *
-		 * final WavefrontVertex v_ccw = vertices[ccw(i)]; final WavefrontVertex v_cw =
-		 * vertices[cw(i)]; if (v_ccw == null || v_cw == null) throw new
-		 * AssertionError(getName() + " edge " + i + " has null endpoint");
-		 *
-		 *
-		 * if (hasNeighbor) { final KineticTriangle n = neighbors[i]; if (n == null)
-		 * throw new AssertionError(getName() + " edge " + i +
-		 * " has null neighbor pointer"); // Redundant check if (n.isDead()) throw new
-		 * AssertionError(getName() + " neighbor " + n.getName() + " at index " + i +
-		 * " is dead"); boolean foundBackRef = false; int n_idx = -1; for(int j=0; j<3;
-		 * ++j) { if (n.neighbors[j] == this) { foundBackRef = true; n_idx = j; break; }
-		 * } if (!foundBackRef) throw new AssertionError(getName() + " neighbor " +
-		 * n.getName() + " does not point back");
-		 *
-		 * if (v_ccw != n.getVertex(cw(n_idx))) throw new AssertionError(getName() +
-		 * " vertex " + ccw(i) + " (V" + v_ccw.id + ") mismatch with neighbor " +
-		 * n.getName() + " vertex " + cw(n_idx) + " (V" + n.getVertex(cw(n_idx)).id +
-		 * ")"); if (v_cw != n.getVertex(ccw(n_idx))) throw new AssertionError(getName()
-		 * + " vertex " + cw(i) + " (V" + v_cw.id + ") mismatch with neighbor " +
-		 * n.getName() + " vertex " + ccw(n_idx) + " (V" + n.getVertex(ccw(n_idx)).id +
-		 * ")"); } else { // Has wavefront final WavefrontEdge w = wavefronts[i]; if (w
-		 * == null) throw new AssertionError(getName() + " edge " + i +
-		 * " has null wavefront pointer"); // Redundant check if
-		 * (w.getIncidentTriangle() != this) throw new AssertionError(getName() +
-		 * " wavefront " + w.id + " edge " + i + " points to wrong triangle (" +
-		 * (w.getIncidentTriangle() != null ? w.getIncidentTriangle().getName() :
-		 * "null") + ")"); // Allow dead wavefronts if triangle is also dying/dead?
-		 * Maybe not. if (w.isDead()) throw new AssertionError(getName() + " wavefront "
-		 * + w.id + " edge " + i + " is dead");
-		 *
-		 * WavefrontVertex w_v0 = w.getVertex(0); WavefrontVertex w_v1 = w.getVertex(1);
-		 * if (w_v0 != v_ccw) throw new AssertionError(getName() + " wavefront " + w.id
-		 * + " edge " + i + " vertex 0 (V" + (w_v0 != null ? w_v0.id : "null") +
-		 * ") mismatch with triangle vertex " + ccw(i) + " (V" + v_ccw.id + ")"); if
-		 * (w_v1 != v_cw) throw new AssertionError(getName() + " wavefront " + w.id +
-		 * " edge " + i + " vertex 1 (V" + (w_v1 != null ? w_v1.id : "null") +
-		 * ") mismatch with triangle vertex " + cw(i) + " (V" + v_cw.id + ")");
-		 *
-		 * if (!v_ccw.isInfinite()) { if (v_ccw.getWavefront(1) != w) throw new
-		 * AssertionError("Vertex V" + v_ccw.id + " wavefront[1] mismatch for edge " +
-		 * w.id + " on " + getName()); } if (!v_cw.isInfinite()) { if
-		 * (v_cw.getWavefront(0) != w) throw new AssertionError("Vertex V" + v_cw.id +
-		 * " wavefront[0] mismatch for edge " + w.id + " on " + getName()); } } }
-		 */
+		if (isDead()) {
+			throw new IllegalStateException("assertValid(): triangle is dead");
+		}
+
+		// For each corner i = 0,1,2
+		for (int i = 0; i < 3; i++) {
+			WavefrontVertex vi = vertices[i];
+			KineticTriangle nbr = neighbors[i];
+			WavefrontEdge wf = wavefronts[i];
+
+			// must have exactly one of (neighbor) XOR (wavefront)
+			if ((nbr != null) == (wf != null)) {
+				throw new IllegalStateException(
+						String.format("Vertex/neigh vs. wavefront mismatch at corner %d of T%d: hasNbr=%b, hasWf=%b", i, getId(), nbr != null, wf != null));
+			}
+
+			// vertex must exist
+			if (vi == null) {
+				throw new IllegalStateException(String.format("Missing vertex %d in T%d", i, getId()));
+			}
+
+			if (nbr != null) {
+				// interior edge: neighbor must point back
+				if (!nbr.hasNeighbor(this)) {
+					throw new IllegalStateException(String.format("Neighborhood inconsistency: T%d not found in neighbor[%d]=T%d", getId(), i, nbr.getId()));
+				}
+				int idxInNbr = nbr.indexOfNeighbor(this);
+
+				// the two “other” vertices must match across the shared edge
+				int cwI = cw(i);
+				int ccwI = ccw(i);
+				int nbrCcw = ccw(idxInNbr);
+				int nbrCw = cw(idxInNbr);
+
+				WavefrontVertex myLeft = vertices[cwI];
+				WavefrontVertex nbrLeft = nbr.getVertex(nbrCcw);
+				if (myLeft != nbrLeft) {
+					throw new IllegalStateException(String.format("Edge‐vertex mismatch (left) at T%d[%d] vs nbr T%d[%d]: %s vs %s", getId(), cwI, nbr.getId(),
+							nbrCcw, myLeft, nbrLeft));
+				}
+
+				WavefrontVertex myRight = vertices[ccwI];
+				WavefrontVertex nbrRight = nbr.getVertex(nbrCw);
+				if (myRight != nbrRight) {
+					throw new IllegalStateException(String.format("Edge‐vertex mismatch (right) at T%d[%d] vs nbr T%d[%d]: %s vs %s", getId(), ccwI,
+							nbr.getId(), nbrCw, myRight, nbrRight));
+				}
+
+			} else {
+				// boundary edge: must have a wavefront
+				if (wf == null) {
+					throw new IllegalStateException(String.format("Missing wavefront on boundary edge %d of T%d", i, getId()));
+				}
+				// the wavefront must reference this triangle
+				if (wf.getIncidentTriangle() != this) {
+					throw new IllegalStateException(
+							String.format("Wavefront‐triangle mismatch: wf.incident=%s vs this=T%d", wf.getIncidentTriangle(), getId()));
+				}
+				if (wf.isDead()) {
+					throw new IllegalStateException(String.format("Wavefront on boundary edge %d of T%d is dead", i, getId()));
+				}
+
+				// the wavefront’s endpoints must be the two opposite vertices:
+				// wf.vertex(0) == vertices[ccw(i)]
+				// wf.vertex(1) == vertices[cw(i)]
+				int cwI = cw(i);
+				int ccwI = ccw(i);
+				WavefrontVertex wf0 = wf.getVertex(0);
+				WavefrontVertex wf1 = wf.getVertex(1);
+
+				if (wf0 != vertices[ccwI] || wf1 != vertices[cwI]) {
+					throw new IllegalStateException(String.format("Wavefront endpoint mismatch in T%d[%d]: got (%s,%s) expected (%s,%s)", getId(), i, wf0, wf1,
+							vertices[ccwI], vertices[cwI]));
+				}
+
+				// each vertex must have this as its incident wavefront on the correct side
+				// (side 1 for ccw‐vertex, side 0 for cw‐vertex)
+				WavefrontEdge v0Side1 = vertices[ccwI].getIncidentEdge(1);
+				WavefrontEdge v1Side0 = vertices[cwI].getIncidentEdge(0);
+				if (v0Side1 != wf || v1Side0 != wf) {
+					throw new IllegalStateException(String.format("Vertex<‐>wavefront back‐links mismatch in T%d[%d]: v[%d].e1=%s, v[%d].e0=%s, wf=%s", getId(),
+							i, ccwI, v0Side1, cwI, v1Side0, wf));
+				}
+			}
+		}
 	}
 
 	// --- toString, equals, hashCode ---

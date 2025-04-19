@@ -1,18 +1,21 @@
 package com.github.micycle1.surferj.kinetics;
 
+import static com.github.micycle1.surferj.TriangulationUtils.ccw;
+import static com.github.micycle1.surferj.TriangulationUtils.cw;
+
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import org.apache.commons.lang3.tuple.Pair;
+import org.locationtech.jts.algorithm.CGAlgorithmsDD;
 import org.locationtech.jts.algorithm.Orientation;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.LineSegment;
@@ -89,7 +92,7 @@ public class KineticTriangulation {
 	long maxEventsPerTime = 0;
 	long avgEventsPerTimeSum = 0;
 	long avgEventsPerTimeCtr = 0;
-	
+
 	public KineticTriangulation() {
 		// NOTE for tests
 	}
@@ -297,7 +300,7 @@ public class KineticTriangulation {
 	}
 
 	public List<WavefrontVertex> getVertices() {
-		return Collections.unmodifiableList(vertices);
+		return vertices;
 	}
 
 	public List<WavefrontEdge> getWavefrontEdges() {
@@ -737,9 +740,12 @@ public class KineticTriangulation {
 		return edgeMap;
 	}
 
+	public EventQueue getQueue() {
+		return queue;
+	}
+
 	public void setQueue(EventQueue eq) {
 		queue = eq;
-
 	}
 
 	public void createRemainingSkeletonDcel() {
@@ -760,60 +766,102 @@ public class KineticTriangulation {
 		return false;
 	}
 
-	// --- AroundVertexIterator (Keep as inner class here) ---
-	// Port the C++ AroundVertexIterator logic as a Java inner class
-	public static class AroundVertexIterator implements Iterator<KineticTriangle> { // Or just helper methods
-		private KineticTriangle currentT;
-		private int currentVIdx;
-		// ... fields for start/end conditions ...
+	/**
+	 * Debug‐only full validity check. If DEBUG_EXPENSIVE_PREDICATES≥1 we also check
+	 * facet orientations at time t, otherwise we fall back to the cheap no‐arg
+	 * assertValid().
+	 */
+	public void assertValid(int currentComponent, double time) {
+		// NOTE should be disabled for production.
+		// always run the cheap global check
+		assertValid();
 
-		public AroundVertexIterator(KineticTriangle t, int vIdx) {
-			/* ... */ }
+		// now the expensive per‐triangle tests
+		for (KineticTriangle t : triangles) {
+			// skip triangles not in the active component
+			if (restrictComponent >= 0) {
+				if (t.getComponent() != restrictComponent)
+					continue;
+			} else {
+				if (t.getComponent() != currentComponent)
+					continue;
+			}
+			if (t.isDead())
+				continue;
 
-		// Implement next(), hasNext() or provide walkCw(), walkCcw() methods
-		// Need access to KineticTriangle.neighbor() and KineticTriangle.index()
+			if (t.isUnbounded()) {
+				// check the two‐triangle fan around the infinite vertex is still CCW
+				int idx = t.getInfiniteVertexIndex();
+				KineticTriangle n = t.getNeighbor(cw(idx));
+				int nidx = n.getInfiniteVertexIndex();
 
-		@Override
-		public boolean hasNext() {
-			/* Check end condition */ return false;
-		} // Placeholder
+				WavefrontVertex u = t.getVertex(cw(idx));
+				WavefrontVertex v = t.getVertex(ccw(idx));
+				WavefrontVertex V = n.getVertex(cw(nidx));
+				WavefrontVertex w = n.getVertex(ccw(nidx));
 
-		@Override
-		public KineticTriangle next() {
-			/* Advance CW/CCW */ return null;
-		} // Placeholder
+				Coordinate pu = u.getPositionAt(time);
+				Coordinate pv = v.getPositionAt(time);
+				Coordinate pw = w.getPositionAt(time);
 
-		// Or alternative methods:
-		public KineticTriangle t() {
-			return currentT;
+				// CGAL_ASSERT( orientation(pu,pv,pw) != RIGHT_TURN );
+				int orient = Orientation.index(pu, pv, pw);
+				if (orient == Orientation.CLOCKWISE) {
+					throw new IllegalStateException(String.format("Unbounded triangle %d is flipped at t=%.6f: orient=%d", t.getId(), time, orient));
+				}
+
+			} else {
+				// Finite triangle: compute det and compare to JTS orientation
+				WavefrontVertex v0 = t.getVertex(0), v1 = t.getVertex(1), v2 = t.getVertex(2);
+				Coordinate a = v0.getPositionAt(time);
+				Coordinate b = v1.getPositionAt(time);
+				Coordinate c = v2.getPositionAt(time);
+
+				// det = det([b−a, c−a])
+				double det = computeDeterminant(a.x, a.y, b.x, b.y, c.x, c.y);
+				// CGAL_assertion_sign(det);
+				if (det == 0) {
+					throw new IllegalStateException(String.format("Triangle %d degenerate at t=%.6f (det=0)", t.getId(), time));
+				}
+
+				boolean cgRight = (Orientation.index(a, b, c) == Orientation.CLOCKWISE);
+				boolean detNeg = det < 0;
+				if (cgRight != detNeg) {
+					throw new IllegalStateException(
+							String.format("Orientation mismatch in T%d at t=%.6f: CGAL=%s, det=%.6f", t.getId(), time, cgRight ? "CW" : "CCW", det));
+				}
+			}
 		}
 
-		public int vInTIdx() {
-			return currentVIdx;
+		// finally each vertex’s own consistency
+		for (WavefrontVertex v : vertices) {
+//			v.assertValid();
 		}
+	}
 
-		public AroundVertexIterator walkCw() {
-			/* ... update state ... */ return this;
-		}
+    /**
+     * The “cheap” consistency check: for every non-dead triangle, call its
+     * assertValid().  We also iterate the wavefront edges to allow any
+     * edge-level checks (no-ops if you don’t have per-edge validation).
+     */
+    public void assertValid() {
+        // Triangles
+		// NOTE should be disabled for production.
+        for (KineticTriangle t : triangles) {
+            if (t.isDead()) {
+                continue;
+            }
+            t.assertValid();
+        }
+    }
 
-		public AroundVertexIterator walkCcw() {
-			/* ... update state ... */ return this;
-		}
-
-		public boolean isEnd() {
-			return currentT == null;
-		} // Example end condition
-
-		// Port mostCw(), mostCcw()
-		public AroundVertexIterator mostCw() {
-			/* ... */ return this;
-		}
-
-		public AroundVertexIterator mostCcw() {
-			/* ... */ return this;
-		}
-
-		// equals/hashCode if needed
+	/**
+	 * Compute 2×2 determinant det( [b−a, c−a] ) = (b.x−a.x)*(c.y−a.y) −
+	 * (b.y−a.y)*(c.x−a.x)
+	 */
+	private static double computeDeterminant(double ax, double ay, double bx, double by, double cx, double cy) {
+		// for assertValid
+		return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
 	}
 
 	public AroundVertexIterator incidentFacesIterator(KineticTriangle t, int vInT) {
@@ -822,10 +870,6 @@ public class KineticTriangulation {
 
 	public AroundVertexIterator incidentFacesEnd() {
 		return new AroundVertexIterator(null, -1); // Represent end state
-	}
-
-	public EventQueue getQueue() {
-		return queue;
 	}
 
 	public Deque<KineticTriangle> getCheckRefinement() {
