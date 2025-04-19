@@ -9,12 +9,12 @@ public class Polynomial {
 	// Represent ax^2 + bx + c
 	public Polynomial(double a, double b, double c) {
 		// Determine actual degree based on non-zero coefficients
-		if (Math.abs(a) > 1e-12) {
+		if (Math.abs(a) > 0) {
 			this.a = a;
 			this.b = b;
 			this.c = c;
 			this.degree = 2;
-		} else if (Math.abs(b) > 1e-12) {
+		} else if (Math.abs(b) > 0) {
 			this.a = 0;
 			this.b = b;
 			this.c = c;

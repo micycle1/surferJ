@@ -1057,115 +1057,198 @@ public class KineticTriangle {
 		return new Polynomial(a, b, c);
 	}
 
+	/**
+	 * Calculates the time of the next generic collapse event (determinant becoming
+	 * zero). Ported logic from C++ implementation.
+	 *
+	 * @param currentTime The current time.
+	 * @param det         The polynomial representing the determinant (area * 2)
+	 *                    over time.
+	 * @return An Optional containing the time of the *first* future collapse event,
+	 *         or Optional.empty() if no collapse occurs at or after currentTime.
+	 */
 	private Optional<Double> getGenericCollapseTime(double currentTime, Polynomial det) {
-		final int degree = det.getDegree();
-		final double detNow = det.evaluate(currentTime);
 
+		final int degree = det.getDegree();
+		final double detNow = det.evaluate(currentTime); // Evaluate determinant at current time
+
+		// --- Degree 0 ---
 		if (degree == 0) {
-			if (Math.abs(det.c) < SurfConstants.ZERO_AREA_SQ) {
-				// log.debug(" GenericCollapseTime: Degree 0, zero constant -> Event now (or
-				// always)"); // Use logger
-				LOGGER.debug("        GenericCollapseTime: Degree 0, zero constant -> Event now (or always)");
-				return Optional.of(currentTime);
+			LOGGER.warn("Have a polynomial of degree zero. Can we catch this sooner? det={}, time={}", det.c, currentTime);
+			if (Math.abs(det.c) < SurfConstants.ZERO_AREA_SQ) { // Check if constant is zero
+				LOGGER.warn("Degree 0 polynomial is zero -> collapses now (and always). time={}", currentTime);
+
+				// C++ loop detection logic
+				if (currentTime == lastTime) {
+					loopDetectionCount++;
+					if (loopDetectionCount > LOOP_DETECTION_LIMIT) {
+						LOGGER.error("Potential infinite loop detected at time {} (Degree 0 Zero). Aborting check.", currentTime);
+						// Consider throwing an exception in critical systems instead of just returning
+						return Optional.empty(); // Avoid returning a time that might perpetuate loop
+					}
+				} else {
+					loopDetectionCount = 0;
+					lastTime = currentTime;
+				}
+				// End C++ loop detection logic
+
+				return Optional.of(currentTime); // Collapse happens now (or always)
 			} else {
-				// log.debug(" GenericCollapseTime: Degree 0, non-zero constant -> NEVER"); //
-				// Use logger
-				LOGGER.debug("        GenericCollapseTime: Degree 0, non-zero constant -> NEVER");
-				return Optional.empty();
+				LOGGER.debug("        Degree 0, non-zero constant -> NEVER");
+				return Optional.empty(); // Non-zero constant, never collapses
 			}
-		} else if (degree == 1) {
+		}
+
+		// --- Degree 1 ---
+		else if (degree == 1) {
 			final double b = det.b;
 			final double c = det.c;
-			if (Math.abs(b) < SurfConstants.ZERO_POLYNOMIAL_COEFF) { // Should not happen if degree is 1
-				LOGGER.warn("Degree 1 polynomial has near-zero slope b=" + b);
-				return Math.abs(c) < SurfConstants.ZERO_AREA_SQ ? Optional.of(currentTime) : Optional.empty();
-			}
-			final double root = -c / b;
-			// log.debug(" GenericCollapseTime: Degree 1, root={}", root); // Use logger
-			LOGGER.debug("        GenericCollapseTime: Degree 1, root=" + root);
 
-			if (root >= currentTime - SurfConstants.ZERO_NT) {
-				if (Math.abs(root - currentTime) < SurfConstants.ZERO_NT) { // Root is effectively now
-					if (b < -SurfConstants.ZERO_POLYNOMIAL_COEFF) { // Shrinking (negative slope)
-						// log.debug(" Root is now, shrinking -> Event now"); // Use logger
-						LOGGER.debug("          Root is now, shrinking -> Event now");
-						return Optional.of(currentTime);
-					} else { // Expanding or zero slope
-						// log.debug(" Root is now, expanding/flat -> No future event"); // Use logger
-						LOGGER.debug("          Root is now, expanding/flat -> No future event");
-						return Optional.empty();
-					}
-				} else { // Root is strictly in the future
-					// If root is future, current area must have opposite sign of slope direction
-					if (detNow * b >= 0 && Math.abs(detNow) > SurfConstants.ZERO_AREA_SQ) {
-						LOGGER.warn("Sign mismatch for future linear root. detNow=" + detNow + ", slope=" + b + ", root=" + root);
-						// This suggests state might be inconsistent (e.g., triangle already inverted?)
-						// Proceeding might lead to errors, but let's return the root for now.
-					}
-					// log.debug(" Root is future -> Event at {}", root); // Use logger
-					LOGGER.debug("          Root is future -> Event at " + root);
-					return Optional.of(root);
+			if (Math.abs(b) < SurfConstants.ZERO_POLYNOMIAL_COEFF) {
+				// Should not happen if degree is truly 1, but handle degeneracies
+				LOGGER.warn("Degree 1 polynomial has near-zero slope b={}, c={}. Treating as degree 0.", b, c);
+				// Re-evaluate as degree 0
+				if (Math.abs(c) < SurfConstants.ZERO_AREA_SQ) {
+					LOGGER.warn("Effective Degree 0 is zero -> collapses now (and always). time={}", currentTime);
+					// Add loop detection here too if desired, similar to degree 0 case
+					return Optional.of(currentTime);
+				} else {
+					return Optional.empty();
 				}
-			} else {
-				// log.debug(" Root is past -> No future event"); // Use logger
+			}
+
+			final double root = -c / b; // Calculate the single root
+			LOGGER.debug("        GenericCollapseTime: Degree 1, root={}", root);
+
+			// Compare root with currentTime using tolerance ZERO_NT
+			if (Math.abs(root - currentTime) < SurfConstants.ZERO_NT) { // Root is effectively now
+				// C++ logic: collapse now only if sign is negative (slope b < 0)
+				if (b < -SurfConstants.ZERO_POLYNOMIAL_COEFF) { // Check sign of b (slope)
+					LOGGER.warn("Polynomial (degree 1) has a zero right now and decreasing. Collapse NOW. time={}", currentTime);
+
+					// C++ loop detection logic
+					if (currentTime == lastTime) {
+						loopDetectionCount++;
+						if (loopDetectionCount > LOOP_DETECTION_LIMIT) {
+							LOGGER.error("Potential infinite loop detected at time {} (Degree 1 Zero Decreasing). Aborting check.", currentTime);
+							return Optional.empty();
+						}
+					} else {
+						loopDetectionCount = 0;
+						lastTime = currentTime;
+					}
+					// End C++ loop detection logic
+
+					return Optional.of(currentTime); // Collapse now because it's decreasing
+				} else {
+					LOGGER.debug("          Root is now, but slope is non-negative (b={}) -> No future event", b);
+					return Optional.empty(); // Not collapsing, or passing through zero while increasing/flat
+				}
+			} else if (root > currentTime /*- SurfConstants.ZERO_NT removed, compare directly */) { // Root is strictly in the future
+				LOGGER.debug("          Root is future -> Event at {}", root);
+				// Optional sanity check (sign mismatch) - useful for debugging state issues
+				if (detNow * b >= SurfConstants.ZERO_AREA_SQ * SurfConstants.ZERO_POLYNOMIAL_COEFF && Math.abs(detNow) > SurfConstants.ZERO_AREA_SQ) {
+					LOGGER.warn("Sign mismatch? Future linear root={}, but detNow={} and slope={} have same sign.", root, detNow, b);
+				}
+				return Optional.of(root); // Future collapse
+			} else { // Root is in the past
 				LOGGER.debug("          Root is past -> No future event");
 				return Optional.empty();
 			}
-		} else { // degree == 2
-			// log.debug(" GenericCollapseTime: Degree 2: {}", det); // Use logger
-			LOGGER.debug("        GenericCollapseTime: Degree 2: " + det);
-			double[] roots = QuadraticSolver.solve(det);
+		}
+
+		// --- Degree 2 ---
+		else { // degree == 2
+			LOGGER.debug("        GenericCollapseTime: Degree 2: {}", det);
+
+			// Use the revised solver that returns ALL real roots
+			double[] roots = QuadraticSolver.solve(det); // Returns 0, 1, or 2 roots, sorted.
+
+			LOGGER.debug("          Mathematical Roots: {}", Arrays.toString(roots));
 
 			if (roots.length == 0) {
-				// log.debug(" No real roots."); // Use logger
 				LOGGER.debug("          No real roots.");
-				if (detNow < 0) {
-					LOGGER.warn("Quadratic with no real roots has negative value " + detNow);
+				// Optional sanity check: if no roots, determinant should not cross zero.
+				// If a>0, det should always be positive (if starting positive).
+				// If a<0, det should always be negative (if starting negative).
+				if (det.a > SurfConstants.ZERO_POLYNOMIAL_COEFF && detNow < -SurfConstants.ZERO_AREA_SQ) {
+					LOGGER.warn("Quadratic opens up (a>0), but detNow is negative ({}) with no real roots!", detNow);
+				} else if (det.a < -SurfConstants.ZERO_POLYNOMIAL_COEFF && detNow > SurfConstants.ZERO_AREA_SQ) {
+					LOGGER.warn("Quadratic opens down (a<0), but detNow is positive ({}) with no real roots!", detNow);
 				}
-				return Optional.empty();
+				return Optional.empty(); // No roots means no collapse
 			} else {
-				double r0 = roots[0]; // Smaller root
-				double r1 = roots[1]; // Larger root
-				// log.debug(" Roots: {}, {}", r0, r1); // Use logger
-				LOGGER.debug("          Roots: " + r0 + ", " + r1);
+				// We have one or two roots. Let's call them r0 and r1 (r0 <= r1).
+				// If only one root, r0 = r1.
+				double r0 = roots[0];
+				double r1 = (roots.length == 1) ? r0 : roots[1];
 
-				// Select the smallest root that is >= currentTime (within tolerance)
-				Optional<Double> firstFutureRoot = Optional.empty();
-				if (r0 >= currentTime - SurfConstants.ZERO_NT) {
-					firstFutureRoot = Optional.of(r0);
-				} else if (r1 >= currentTime - SurfConstants.ZERO_NT) {
-					firstFutureRoot = Optional.of(r1);
-				}
+				double a = det.a;
+				Optional<Double> collapseTime = Optional.empty();
 
-				if (firstFutureRoot.isPresent()) {
-					// Sanity check using C++ logic interpretation:
-					// If a < 0 (opens down) and detNow >= 0, we expect the first future root (r0 or
-					// r1).
-					// If a < 0 and detNow < 0, we expect the second root r1.
-					// If a > 0 (opens up) and detNow >= 0, we expect the first future root r0.
-					// If a > 0 and detNow < 0, this state shouldn't occur if starting valid.
-					double a = det.a;
-					if (Math.abs(a) > SurfConstants.ZERO_POLYNOMIAL_COEFF) { // Check if quadratic is degenerate
-						if (a < 0 && detNow < -SurfConstants.ZERO_AREA_SQ) {
-							if (Math.abs(firstFutureRoot.get() - r1) > SurfConstants.ZERO_NT && r1 >= currentTime - SurfConstants.ZERO_NT) {
-								LOGGER.warn("Generic time logic mismatch? a<0, detNow<0. Expected r1=" + r1 + ", got=" + firstFutureRoot.get());
-								// Override to r1 if it's also a future root? Or trust the 'smallest future
-								// root' logic?
-								// Let's stick to smallest future root for now.
-							}
-						}
-						// Could add more checks here based on C++ comments if needed.
+				// Apply C++ logic based on sign of 'a'
+				if (a < -SurfConstants.ZERO_POLYNOMIAL_COEFF) { // Parabola opens downward (a < 0)
+					// C++ logic: collapse time is the *larger* root (x1).
+					// We only report it if it's a *future* event relative to currentTime.
+					LOGGER.debug("          Parabola opens down (a < 0). Considering larger root r1 = {}", r1);
+					if (r1 >= currentTime - SurfConstants.ZERO_NT) {
+						// Clamp to currentTime if it's very close to avoid past times due to precision
+						collapseTime = Optional.of(Math.max(currentTime, r1));
+						LOGGER.debug("          Selected future collapse time (a<0): {}", collapseTime.get());
+					} else {
+						LOGGER.debug("          Larger root r1 is in the past. No future collapse.");
 					}
-					// log.debug(" Selected future root: {}", firstFutureRoot.get()); // Use logger
-					LOGGER.debug("          Selected future root: " + firstFutureRoot.get());
+				} else if (a > SurfConstants.ZERO_POLYNOMIAL_COEFF) { // Parabola opens upward (a > 0)
+					// C++ logic: collapse time is the *smaller* root (x0), but ONLY if it's >=
+					// time_now.
+					LOGGER.debug("          Parabola opens up (a > 0). Considering smaller root r0 = {}", r0);
+					if (r0 >= currentTime - SurfConstants.ZERO_NT) {
+						// Clamp to currentTime if very close
+						collapseTime = Optional.of(Math.max(currentTime, r0));
+						LOGGER.debug("          Selected future collapse time (a>0): {}", collapseTime.get());
+					} else {
+						// r0 is in the past. The next root r1 is when the determinant becomes positive
+						// again,
+						// so it's not considered a "collapse" in the C++ logic's context here.
+						LOGGER.debug("          Smaller root r0 is in the past. No future collapse.");
+						// We also need to check if r1 is a future time, because if r0 is past and r1 is
+						// future,
+						// we are currently *inside* the interval where det < 0 (if detNow < 0).
+						// However, the C++ code explicitly says `result = false` if x0 < time_now when
+						// a > 0.
+						// We will adhere to that direct port. If the system requires handling the exit
+						// from a
+						// negative determinant state when a>0, the logic needs further adaptation
+						// beyond the C++ source.
+					}
 				} else {
-					// log.debug(" Both roots are past -> No future event"); // Use logger
-					LOGGER.debug("          Both roots are past -> No future event");
+					// a is effectively zero. Should have been caught by degree check.
+					LOGGER.error("Polynomial has degree 2 but 'a' coefficient is near zero: {}", det);
+					// Fallback or return empty ? Returning empty is safer.
+					return Optional.empty();
 				}
-				return firstFutureRoot;
+
+				// Final sanity check (optional but good):
+				// If we found a collapse time, detNow should ideally have the "correct" sign.
+				// If a < 0, we expect detNow >= 0 for a future collapse at r1.
+				// If a > 0, we expect detNow >= 0 for a future collapse at r0.
+				if (collapseTime.isPresent()) {
+					if (a < -SurfConstants.ZERO_POLYNOMIAL_COEFF && detNow < -SurfConstants.ZERO_AREA_SQ) {
+						LOGGER.warn("Logic Warning (a<0): Found future collapse time {} but detNow={} is negative.", collapseTime.get(), detNow);
+					} else if (a > SurfConstants.ZERO_POLYNOMIAL_COEFF && detNow < -SurfConstants.ZERO_AREA_SQ) {
+						LOGGER.warn("Logic Warning (a>0): Found future collapse time {} but detNow={} is negative.", collapseTime.get(), detNow);
+					}
+				} else {
+					// If no future collapse time was found, log why
+					if (roots.length == 1)
+						LOGGER.debug("          Single root r0={} is in the past.", r0);
+					// else handled above (r1 past for a<0, r0 past for a>0)
+				}
+
+				return collapseTime;
 			}
 		}
-	}
+	} // end getGenericCollapseTime
 
 	private boolean acceptCollapseBoundedConstrained1(double collapseTime, Polynomial determinant, boolean isEdgeCollapseCandidate) {
 		if (determinant.getDegree() != 2) {
