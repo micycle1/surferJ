@@ -86,6 +86,7 @@ public class SkeletonStructure {
 	 * @return The SkeletonDCEL object (initially a placeholder).
 	 */
 	public SkeletonDCEL getSkeleton() {
+		wp.advanceToEnd();
 		return skeleton; // Directly return the member
 		// Or return kt.getSkeleton() if KT holds the primary reference
 	}

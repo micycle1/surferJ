@@ -51,7 +51,7 @@ public class EventQueue {
 
 		for (KineticTriangle t : kt.getTriangles()) {
 			if (t != null && !t.isDead()) { // Only add active triangles
-				EventQueueItem qi = new EventQueueItem(t, 0); // Initialize at time 0 NOTE USE SurfConstants.ZERO?
+				EventQueueItem qi = new EventQueueItem(t, 0); // Initialize at time 0
 				// NOTE: Only add valid events to the queue initially? The C++ adds all.
 				// Adding all mimics C++, even if event is NEVER.
 				this.queue.add(qi);

@@ -227,13 +227,8 @@ public class CollapseSpec implements Comparable<CollapseSpec> {
 		return this.isValid;
 	}
 
-	// --- Refinement Logic ---
 	public boolean allowsRefinementTo(CollapseSpec o) {
 		if (type == CollapseType.SPLIT_OR_FLIP_REFINE) {
-			// C++ logic check:
-			// if (o.type_ == CollapseType::VERTEX_MOVES_OVER_SPOKE || o.type_ ==
-			// CollapseType::SPOKE_COLLAPSE)
-			// if (relevant_edge_ != o.relevant_edge_) return true;
 			if (o.type == CollapseType.VERTEX_MOVES_OVER_SPOKE || o.type == CollapseType.SPOKE_COLLAPSE) {
 				return relevantEdge != o.relevantEdge;
 			}

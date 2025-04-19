@@ -70,6 +70,12 @@ public class WavefrontPropagator {
 	public double getTime() {
 		return time;
 	}
+	
+	
+	public EventQueue getQueue() {
+		// NOTE for testing
+		return eq;
+	}
 
 	/**
 	 * Sets the time increment used by advanceTime().
