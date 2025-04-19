@@ -89,6 +89,10 @@ public class KineticTriangulation {
 	long maxEventsPerTime = 0;
 	long avgEventsPerTimeSum = 0;
 	long avgEventsPerTimeCtr = 0;
+	
+	public KineticTriangulation() {
+		// NOTE for tests
+	}
 
 	public KineticTriangulation(SkeletonDCEL dcel) {
 		this.dcel = dcel;

@@ -13,7 +13,6 @@ import com.github.micycle1.surferj.kinetics.KineticTriangulation;
  * EventQueue. It advances simulation time, handles events by delegating to
  * KineticTriangulation, and manages the overall simulation lifecycle.
  */
-
 public class WavefrontPropagator {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(WavefrontPropagator.class);
@@ -23,9 +22,9 @@ public class WavefrontPropagator {
 	private long eventCtr = 0; // Event counter
 	private boolean finalized = false; // Has the simulation finished and finalized?
 
-	private double time = SurfConstants.ZERO; // Current simulation time
-	private double lastEventTime = SurfConstants.ZERO; // Time of the last processed event
-	private double increment = 0.0005; // Default time step for manual advance
+	private double time = 0; // Current simulation time
+	private double lastEventTime = 0; // Time of the last processed event
+	double increment = 0.0005; // Default time step for manual advance
 
 	// Component tracking (optional, for visualization/debugging)
 	private int currentComponent = -1;
@@ -102,47 +101,84 @@ public class WavefrontPropagator {
 		if (eq == null) {
 			return true; // Not initialized yet
 		}
-		eq.processPendingUpdates(this.time); // Process updates before checking state
-		EventQueueItem next = eq.peek();
+		EventQueueItem next = peekNextEvent();
 		return next == null || next.getEvent().getType() == CollapseType.NEVER;
 	}
 
 	/**
-	 * Advances simulation time by the current increment. If events occur during
-	 * this time step, they are processed sequentially until the target time is
-	 * reached.
+	 * Advances simulation time by the current increment. If there are no future
+	 * events, processes exactly one step. Otherwise drains all events whose time ≤
+	 * new time, then resets time to the new time.
 	 */
-	public void advanceTime() {
+	public void advanceTime1() {
 		double targetTime = this.time + this.increment;
-		advanceTimeIgnoreEvent(targetTime); // Process events up to targetTime
+
+		if (noMoreEvents()) {
+			// C++ does time += increment, then one advance_step()
+			this.time = targetTime;
+			advanceStep();
+		} else {
+			// drain all events at or before targetTime
+			while (!isPropagationComplete()) {
+				EventQueueItem next = peekNextEvent();
+				if (next == null || next.getEvent().getTime() > targetTime) {
+					break;
+				}
+				advanceStep();
+			}
+			// restore the bumped‐ahead clock
+			this.time = targetTime;
+		}
+	}
+
+	public void advanceTime() {
+		this.time += this.increment;
+
+		if (!this.isPropagationComplete()) {
+			// Assuming no_more_events() check corresponds to eq.isEmpty()
+			if (this.eq.isEmpty()) {
+				this.advanceStep();
+			} else {
+				double wantTime = this.time;
+				// Added !this.eq.isEmpty() check for safety before calling peek()
+				while (!this.isPropagationComplete() && !this.eq.isEmpty() && wantTime > this.eq.peek().getEvent().getTime()) {
+					this.advanceStep();
+				}
+				this.time = wantTime;
+			}
+		}
 	}
 
 	/**
-	 * Advances simulation time to the specified target time. Processes all events
-	 * that occur before or at this target time. Use this instead of setting time
-	 * directly if events need processing.
-	 *
-	 * @param targetTime The time to advance to.
+	 * Advances simulation time to the given targetTime, processing all events whose
+	 * timestamps ≤ targetTime.
 	 */
 	public void advanceTimeIgnoreEvent(double targetTime) {
 		if (finalized || eq == null) {
-			this.time = targetTime; // Just set time if finalized or not setup
+			this.time = targetTime;
 			return;
 		}
+		// first process any pending updates at current time
+		eq.processPendingUpdates(this.time);
 
+		// then drain all events up to (and including) targetTime
 		while (!isPropagationComplete()) {
-			eq.processPendingUpdates(this.time); // Ensure queue is up-to-date
-			EventQueueItem nextItem = eq.peek();
-
-			if (nextItem == null || nextItem.getEvent().getTime() > targetTime) {
-				// No more events before target time
+			EventQueueItem next = eq.peek();
+			if (next == null || next.getEvent().getTime() > targetTime) {
 				break;
 			}
-			// Next event is at or before target time, process it
 			advanceStep();
 		}
-		// After processing all events <= targetTime, set time to the target
+		// finally set time to the target
 		this.time = targetTime;
+	}
+
+	/**
+	 * A no‐arg version matching C++ advance_time_ignore_event(): simply adds the
+	 * increment to the current time.
+	 */
+	public void advanceTimeIgnoreEvent() {
+		this.time += this.increment;
 	}
 
 	/**
@@ -153,8 +189,7 @@ public class WavefrontPropagator {
 		if (finalized || eq == null) {
 			return;
 		}
-		eq.processPendingUpdates(this.time); // Ensure queue is up-to-date
-		EventQueueItem next = eq.peek();
+		EventQueueItem next = peekNextEvent();
 		if (next != null && next.getEvent().getType() != CollapseType.NEVER) {
 			this.time = next.getEvent().getTime();
 			if (sk.getKt().isRestrictComponent()) {
@@ -176,16 +211,13 @@ public class WavefrontPropagator {
 			return;
 		}
 
-		// CRITICAL: Process pending updates *before* polling the next event
-		eq.processPendingUpdates(this.time);
-
 		if (noMoreEvents()) {
 			LOGGER.info("No more events to process.");
 			finalizeSim(); // Automatically finalize if queue becomes empty
 			return;
 		}
 
-		EventQueueItem nextItem = eq.poll(); // Poll retrieves and removes the head
+		EventQueueItem nextItem = pollNextEvent();
 		if (nextItem == null) { // Should not happen if noMoreEvents was false, but safety check
 			LOGGER.warn("Polled null item unexpectedly.");
 			finalizeSim();
@@ -272,8 +304,7 @@ public class WavefrontPropagator {
 		if (skipUntilTime > SurfConstants.ZERO && !isPropagationComplete()) {
 			// Process events strictly *before* the skip time
 			while (!isPropagationComplete()) {
-				eq.processPendingUpdates(this.time); // Update before peeking
-				EventQueueItem next = eq.peek();
+				EventQueueItem next = peekNextEvent();
 				if (next == null || next.getEvent().getTime() >= skipUntilTime) {
 					break; // Next event is at or after skip time
 				}
@@ -320,17 +351,46 @@ public class WavefrontPropagator {
 	}
 
 	/**
-	 * Returns the next event item in the queue without removing it. Processes
-	 * pending updates first.
+	 * Peeks at the next scheduled event without removing it from the queue.
+	 * <p>
+	 * In the original C++ code the custom heap automatically flushed any deferred
+	 * drops or decrease‑key updates whenever you called peek(). The Java port uses
+	 * a standard PriorityQueue + deferred‐update sets, so we must explicitly call
+	 * {@code eq.processPendingUpdates(time)} here to keep the head of the queue
+	 * correct.
+	 * <p>
+	 * This method does <em>not</em> advance simulation time or invoke the event
+	 * handler—it merely returns the next {@link EventQueueItem}.
 	 *
-	 * @return The next EventQueueItem or null if none.
+	 * @return the next {@link EventQueueItem}, or {@code null} if empty
 	 */
-	public EventQueueItem peekNextItem() {
+	EventQueueItem peekNextEvent() {
 		if (eq == null) {
 			return null;
 		}
 		eq.processPendingUpdates(this.time);
 		return eq.peek();
+	}
+
+	/**
+	 * Removes and returns the next scheduled event without handling it.
+	 * <p>
+	 * As with {@link #peekEvent()}, we must first flush the Java‐specific
+	 * deferred‐update and deferred‐drop sets. In C++ this was baked into the heap’s
+	 * own remove/peek; in Java we do it by hand.
+	 * <p>
+	 * This does <em>not</em> advance the clock to the event’s time nor dispatch the
+	 * event. To fully process the event you’ll still call {@link #advanceStep()}
+	 * (or one of the time‐advance methods).
+	 *
+	 * @return the removed {@link EventQueueItem}, or {@code null} if none left
+	 */
+	private EventQueueItem pollNextEvent() {
+		if (eq == null) {
+			return null;
+		}
+		eq.processPendingUpdates(this.time);
+		return eq.poll();
 	}
 
 	long getEventCtrForTesting() {

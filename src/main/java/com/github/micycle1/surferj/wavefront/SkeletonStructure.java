@@ -22,6 +22,15 @@ public class SkeletonStructure {
 	private final KineticTriangulation kt;
 	final SkeletonDCEL skeleton; // The (initially empty) skeleton structure
 	final WavefrontPropagator wp;
+	
+	public SkeletonStructure() {
+		// NOTE for tests
+		this.input = null;
+		this.wavefrontEdges = new ArrayList<>(); // Initialize empty list
+		this.skeleton = new SkeletonDCEL(); // Initialize placeholder DCEL
+		this.kt = new KineticTriangulation(this.skeleton); // Pass DCEL reference
+		this.wp = new WavefrontPropagator(this); // Propagator needs reference back
+	}
 
 	/**
 	 * Constructs a SkeletonStructure with the given input geometry.

@@ -1,11 +1,5 @@
 package com.github.micycle1.surferj.wavefront;
 
-/**
-* Manages the priority queue of collapse events for the kinetic triangulation.
-* Uses a custom Heap implementation to allow efficient updates and removals.
-* Mirrors the C++ EventQueue class.
-*/
-
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -29,6 +23,12 @@ public class EventQueue {
 	// (O(log N) for remove-by-identity + O(log N) for add, vs C++ O(log N)
 	// fix_idx).
 	// The Map lookup is O(1) on average.
+	/*
+	 * Functionally equivalent, but note the Java version’s update/drop both cost
+	 * O(n) on top of the O(log n) heap‐ops. If your triangulations have many
+	 * triangles you may eventually want a custom heap (e.g. use a binary‐indexed
+	 * array) to restore O(log n) decrease‐key.
+	 */
 	private final PriorityQueue<EventQueueItem> queue;
 	private final Map<Long, EventQueueItem> tidToItemMap; // Map Triangle ID -> Queue Item
 
@@ -221,6 +221,11 @@ public class EventQueue {
 	 * polling or peeking the queue.
 	 */
 	private void assertNoPending() {
+		/*
+		 * NOTE : your assertNoPending() in Java warns (or throws) if there are pending
+		 * updates/drops. The C++ assert_no_pending() is always a no‐op in release and a
+		 * hard assert in debug.
+		 */
 		if (!needsDroppingSet.isEmpty() || !needsUpdateSet.isEmpty()) {
 			// Consider throwing an IllegalStateException or logging a warning
 			System.err.println("WARNING: EventQueue accessed while updates/drops pending. Call processPendingUpdates() first.");

@@ -24,6 +24,11 @@ import com.github.micycle1.surferj.wavefront.Event;
  * different event types (collapses, splits, flips).
  */
 public class KineticEventHandler {
+
+	// NOTE this replaces C++ handle_event() method on KineticTriangulation with a
+	// standalone class
+	// for code cleanness
+
 	private static final Logger LOGGER = Logger.getLogger(KineticEventHandler.class.getName());
 
 	private final KineticTriangulation kt;

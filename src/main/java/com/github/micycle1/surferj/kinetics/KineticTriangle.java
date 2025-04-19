@@ -1477,7 +1477,7 @@ public class KineticTriangle {
 
 		final Vector2D PQ = Vector2D.create(Q0).subtract(Vector2D.create(P0));
 
-		// NOTE dot, since CGAL::Vector_2<Kernel> overloads the operator*
+		// NOTE dot, since CGAL::Vector_2<Kernel> overloads the multiplication operator *
 		final double scaledDistance = n.dot(PQ);
 		final double scaledVertexSpeedNormal = n.dot(s);
 		final double scaledEdgeSpeedNormal = w * nLen;
