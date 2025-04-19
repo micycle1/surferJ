@@ -7,14 +7,12 @@ import static com.github.micycle1.surferj.TriangulationUtils.mod3;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 import org.apache.commons.lang3.tuple.Pair;
 import org.locationtech.jts.algorithm.Orientation;
 import org.locationtech.jts.geom.Coordinate;
-import org.locationtech.jts.geom.LineSegment;
-import org.locationtech.jts.math.Vector2D;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.github.micycle1.surferj.SurfConstants;
 import com.github.micycle1.surferj.TriangulationUtils;
@@ -33,7 +31,7 @@ public class KineticEventHandler {
 	// NOTE this replaces C++ handle_event() method on KineticTriangulation
 	// a standalone class for code cleanness
 
-	private static final Logger LOGGER = Logger.getLogger(KineticEventHandler.class.getName());
+	private static final Logger LOGGER = LoggerFactory.getLogger(KineticEventHandler.class);
 
 	private final KineticTriangulation kt;
 
@@ -43,8 +41,9 @@ public class KineticEventHandler {
 
 	public void handleEvent(Event event) {
 		final double time = event.getTime();
+//		LOGGER.
 		if (Double.isNaN(time)) {
-			LOGGER.severe("Attempting to handle event with NaN time: " + event);
+			LOGGER.error("Attempting to handle event with NaN time: " + event);
 			return;
 		}
 
@@ -52,7 +51,7 @@ public class KineticEventHandler {
 		long tid = event.getTriangle().getId();
 		KineticTriangle liveT = kt.getTriangles().get((int) tid);
 		if (liveT == null || liveT.isDead() || liveT.isDying()) {
-			LOGGER.fine("Skipping stale/dead triangle " + tid + ": " + event);
+			LOGGER.debug("Skipping stale/dead triangle " + tid + ": " + event);
 			return;
 		}
 		// Rebuild event so all handlers see the live triangle instance
@@ -64,7 +63,7 @@ public class KineticEventHandler {
 
 		updateEventTimingStats(time);
 
-		LOGGER.finer("Handling event: " + event);
+		LOGGER.debug("Handling event: " + event);
 		switch (event.getType()) {
 			case TRIANGLE_COLLAPSE :
 				handleTriangleCollapseEvent(event);
@@ -91,7 +90,7 @@ public class KineticEventHandler {
 				handleFaceWithInfinitelyFastWeightedVertex(event);
 				break;
 			default :
-				LOGGER.severe("Unexpected event type: " + event);
+				LOGGER.error("Unexpected event type: " + event);
 				return;
 		}
 
@@ -123,7 +122,7 @@ public class KineticEventHandler {
 			return; // Check again
 		}
 		final double time = event.getTime();
-		LOGGER.log(Level.FINEST, "Handling TRIANGLE_COLLAPSE for T{0} @ {1}", new Object[] { t.getId(), time });
+		LOGGER.debug("Handling TRIANGLE_COLLAPSE for T{} @ {}", new Object[] { t.getId(), time });
 
 		t.markDying();
 
@@ -156,7 +155,7 @@ public class KineticEventHandler {
 							doSpokeCollapsePart2(n, idxInN, time);
 						}
 					} else {
-						LOGGER.warning("Neighbor inconsistency during TRIANGLE_COLLAPSE for T" + t.getId() + " and neighbor T" + n.getId());
+						LOGGER.warn("Neighbor inconsistency during TRIANGLE_COLLAPSE for T" + t.getId() + " and neighbor T" + n.getId());
 					}
 				}
 			}
@@ -171,7 +170,7 @@ public class KineticEventHandler {
 		}
 		final double time = event.getTime();
 		final int edgeIdx = event.getRelevantEdge();
-		LOGGER.log(Level.FINEST, "Handling CONSTRAINT_COLLAPSE for T{0} edge {1} @ {2}", new Object[] { t.getId(), edgeIdx, time });
+		LOGGER.debug("Handling CONSTRAINT_COLLAPSE for T{} edge {} @ {}", new Object[] { t.getId(), edgeIdx, time });
 
 		WavefrontVertex va = t.getVertex(ccw(edgeIdx));
 		WavefrontVertex vb = t.getVertex(cw(edgeIdx));
@@ -191,11 +190,11 @@ public class KineticEventHandler {
 	}
 
 	private void handleSpokeCollapseEvent(Event event) {
-		KineticTriangle t = (KineticTriangle) event.getTriangle();
+		KineticTriangle t = event.getTriangle();
 		int edgeIdx = event.getRelevantEdge();
 		double time = event.getTime();
 
-		LOGGER.finest("SPOKE_COLLAPSE T" + t.getId() + " edge " + edgeIdx + " @ " + time);
+		LOGGER.debug("SPOKE_COLLAPSE T" + t.getId() + " edge " + edgeIdx + " @ " + time);
 		// stop the two spoke endpoints
 		WavefrontVertex va = t.getVertex(ccw(edgeIdx));
 		WavefrontVertex vb = t.getVertex(cw(edgeIdx));
@@ -227,7 +226,7 @@ public class KineticEventHandler {
 		}
 		final double time = event.getTime();
 		final int edgeIdx = event.getRelevantEdge();
-		LOGGER.log(Level.FINEST, "Handling SPLIT for T{0} edge {1} @ {2}", new Object[] { t.getId(), edgeIdx, time });
+		LOGGER.debug("Handling SPLIT for T{} edge {} @ {}", new Object[] { t.getId(), edgeIdx, time });
 
 		WavefrontVertex v = t.getVertex(edgeIdx);
 		WavefrontEdge edge = t.getWavefront(edgeIdx);
@@ -235,13 +234,13 @@ public class KineticEventHandler {
 		WavefrontVertex vb = t.getVertex(cw(edgeIdx)); // Endpoint of edge
 
 		if (v == null || edge == null || va == null || vb == null) {
-			LOGGER.severe("Null component found during SPLIT event for T" + t.getId());
+			LOGGER.error("Null component found during SPLIT event for T" + t.getId());
 			return; // Cannot proceed
 		}
 		final WavefrontEdge edgeA = v.getIncidentEdge(1); // Edge towards va? Check convention
 		final WavefrontEdge edgeB = v.getIncidentEdge(0); // Edge towards vb? Check convention
 		if (edgeA == null || edgeB == null) {
-			LOGGER.severe("Null incident edge found on vertex V" + v.id + " during SPLIT event for T" + t.getId());
+			LOGGER.error("Null incident edge found on vertex V" + v.id + " during SPLIT event for T" + t.getId());
 			return;
 		}
 
@@ -348,18 +347,20 @@ public class KineticEventHandler {
 		int tid = (int) event.getTriangle().getId();
 		KineticTriangle t = kt.getTriangles().get(tid);
 
-		if (t == null || t.isDying())
+		if (t == null || t.isDying()) {
 			return;
+		}
 		double time = event.getTime();
 		int ei = event.getRelevantEdge();
 
-		LOGGER.log(Level.FINEST, "Handling SPLIT_OR_FLIP_REFINE for T{0} edge {1} @ {2}", new Object[] { t.getId(), ei, time });
+		LOGGER.debug("Handling SPLIT_OR_FLIP_REFINE for T{} edge {} @ {}", new Object[] { t.getId(), ei, time });
 
 		WavefrontVertex v = t.getVertex(ei);
 		WavefrontVertex va = t.getVertex(ccw(ei));
 		WavefrontVertex vb = t.getVertex(cw(ei));
-		if (v == null || va == null || vb == null)
+		if (v == null || va == null || vb == null) {
 			return;
+		}
 
 		Coordinate pos = v.getPositionAt(time);
 		Coordinate posa = va.getPositionAt(time);
@@ -371,28 +372,29 @@ public class KineticEventHandler {
 
 		if (!onSegment) {
 			// refine into VERTEX_MOVES_OVER_SPOKE
-			LOGGER.log(Level.FINEST, "Refining SPLIT_OR_FLIP to VERTEX_MOVES_OVER_SPOKE for T{0}", t.getId());
+			LOGGER.debug("Refining SPLIT_OR_FLIP to VERTEX_MOVES_OVER_SPOKE for T{}", t.getId());
 			double d2a = pos.distanceSq(posa), d2b = pos.distanceSq(posb);
 			double longestSpoke = Math.sqrt(Math.max(d2a, d2b));
 			int flipEdge = (d2a > d2b) ? cw(ei) : ccw(ei);
 			CollapseSpec cs = new CollapseSpec(CollapseType.VERTEX_MOVES_OVER_SPOKE, time, t, flipEdge, longestSpoke, t.getComponent());
+			LOGGER.debug("tID: {}, spec: {}", t.getId(), t.getCollapseSpec(time).toString());
 			t.refineCollapseSpec(cs);
 			kt.getQueue().needsUpdate(t, true);
 		} else if (pos.distanceSq(posa) < SurfConstants.ZERO_TOL_SQ) {
 			// refine into SPOKE_COLLAPSE at A
-			LOGGER.log(Level.FINEST, "Refining SPLIT_OR_FLIP to SPOKE_COLLAPSE (at A) for T{0}", t.getId());
+			LOGGER.debug("Refining SPLIT_OR_FLIP to SPOKE_COLLAPSE (at A) for T{}", t.getId());
 			CollapseSpec cs = new CollapseSpec(CollapseType.SPOKE_COLLAPSE, time, t, cw(ei), t.getComponent());
 			t.refineCollapseSpec(cs);
 			kt.getQueue().needsUpdate(t, true);
 		} else if (pos.distanceSq(posb) < SurfConstants.ZERO_TOL_SQ) {
 			// refine into SPOKE_COLLAPSE at B
-			LOGGER.log(Level.FINEST, "Refining SPLIT_OR_FLIP to SPOKE_COLLAPSE (at B) for T{0}", t.getId());
+			LOGGER.debug("Refining SPLIT_OR_FLIP to SPOKE_COLLAPSE (at B) for T{}", t.getId());
 			CollapseSpec cs = new CollapseSpec(CollapseType.SPOKE_COLLAPSE, time, t, ccw(ei), t.getComponent());
 			t.refineCollapseSpec(cs);
 			kt.getQueue().needsUpdate(t, true);
 		} else {
 			// true split
-			LOGGER.log(Level.FINEST, "Executing true SPLIT for T{0}", t.getId());
+			LOGGER.debug("Executing true SPLIT for T{}", t.getId());
 			handleSplitEvent(event);
 		}
 	}
@@ -402,23 +404,23 @@ public class KineticEventHandler {
 		if (t == null || t.isDying()) {
 			return; // Check again
 		}
-		LOGGER.log(Level.FINEST, "Handling VERTEX_MOVES_OVER_SPOKE for T{0}", t.getId());
+		LOGGER.debug("Handling VERTEX_MOVES_OVER_SPOKE for T{}", t.getId());
 		doFlipEvent(event.getTime(), t, event.getRelevantEdge());
 	}
 
 	private void handleCcwVertexLeavesChEvent(Event event) {
-		KineticTriangle t = (KineticTriangle) event.getTriangle();
+		KineticTriangle t = event.getTriangle();
 		int idx = event.getRelevantEdge();
 		double time = event.getTime();
 
-		LOGGER.finest("CCW_VERTEX_LEAVES_CH T" + t.getId() + " edge " + idx + " @ " + time);
+		LOGGER.debug("CCW_VERTEX_LEAVES_CH T" + t.getId() + " edge " + idx + " @ " + time);
 		// CGAL calls do_flip(…, allow_collinear=false)
 		doFlip(t, cw(idx), time, false);
 	}
 
 	private void handleFaceWithInfinitelyFastOpposingVertex(Event event) {
 		// NOTE complex original impl -- maybe check this port?
-		KineticTriangle t = (KineticTriangle) event.getTriangle();
+		KineticTriangle t = event.getTriangle();
 		double time = event.getTime();
 
 		// 1) Count constraints & infinite‐speed vertices
@@ -525,12 +527,13 @@ public class KineticEventHandler {
 			Coordinate posV = v.getPositionAt(time);
 			double dCW = posV.distanceSq(vCw.getPositionAt(time));
 			double dCCW = posV.distanceSq(vCcw.getPositionAt(time));
-			if (dCW < dCCW)
+			if (dCW < dCCW) {
 				collapseEdge = ccw(vidx2);
-			else if (dCCW < dCW)
+			} else if (dCCW < dCW) {
 				collapseEdge = cw(vidx2);
-			else
+			} else {
 				doSpokeCollapse = true;
+			}
 		}
 
 		// 4) Perform the chosen collapse
@@ -544,11 +547,13 @@ public class KineticEventHandler {
 
 			// kill the two wavefronts
 			WavefrontEdge w1 = t2.getWavefront(cw(vidx2));
-			if (w1 != null)
+			if (w1 != null) {
 				w1.markDead();
+			}
 			WavefrontEdge w2 = t2.getWavefront(ccw(vidx2));
-			if (w2 != null)
+			if (w2 != null) {
 				w2.markDead();
+			}
 
 			// unlink t2 ↔ neighbor
 			KineticTriangle n2 = t2.getNeighbor(vidx2);
@@ -592,7 +597,7 @@ public class KineticEventHandler {
 	}
 
 	private void handleFaceWithInfinitelyFastWeightedVertex(Event event) {
-		KineticTriangle t = (KineticTriangle) event.getTriangle();
+		KineticTriangle t = event.getTriangle();
 		double time = event.getTime();
 
 		// 1) Identify which endpoint has WEIGHTED infinite speed
@@ -623,8 +628,9 @@ public class KineticEventHandler {
 			int nidx = ccw(mw.vInTIdx());
 			KineticTriangle nbr = mw.t().getNeighbor(nidx);
 			doRawFlip(mw.t(), nidx, time, true);
-			if (nbr != null)
+			if (nbr != null) {
 				modified(nbr, false);
+			}
 		} else {
 			// general “walk‐and‐flip” loop
 			while (true) {
@@ -650,9 +656,10 @@ public class KineticEventHandler {
 				// perform the flip
 				doRawFlip(tri, nidx, time, true);
 				KineticTriangle post = tri.getNeighbor(nidx);
-				if (post != null)
+				if (post != null) {
 					modified(post, false);
-				// stay on this triangle and re‐check
+					// stay on this triangle and re‐check
+				}
 			}
 		}
 
@@ -702,7 +709,7 @@ public class KineticEventHandler {
 		WavefrontVertex vb = t.getVertex(cw(edgeIdx)); // Already stopped
 
 		if (v == null || va == null || vb == null) {
-			LOGGER.severe("Null vertex during doSpokeCollapsePart2 for T" + t.getId());
+			LOGGER.error("Null vertex during doSpokeCollapsePart2 for T" + t.getId());
 			return;
 		}
 
@@ -712,7 +719,7 @@ public class KineticEventHandler {
 		// they match.
 		Coordinate stopPos = va.getPosStop(); // Assuming getPosStop() exists
 		if (stopPos == null) {
-			LOGGER.severe("Cannot get stop position during doSpokeCollapsePart2 for T" + t.getId());
+			LOGGER.error("Cannot get stop position during doSpokeCollapsePart2 for T" + t.getId());
 			// Fallback or error - maybe use getPositionAt(time)? Needs careful check.
 			stopPos = va.getPositionAt(time); // Use position at time as fallback
 		}
@@ -728,7 +735,7 @@ public class KineticEventHandler {
 		}
 
 		if (fullCollapse) {
-			LOGGER.log(Level.FINEST, "--> Full collapse detected in doSpokeCollapsePart2 for T{0}", t.getId());
+			LOGGER.debug("--> Full collapse detected in doSpokeCollapsePart2 for T{}", t.getId());
 			t.markDying();
 			// Handle neighbors recursively or update DCEL links
 			for (int i = 1; i <= 2; ++i) {
@@ -743,7 +750,7 @@ public class KineticEventHandler {
 							doSpokeCollapsePart2(n, idxInN, time); // Recurse
 						}
 					} else {
-						LOGGER.warning("Neighbor inconsistency during full spoke collapse part2 for T" + t.getId() + " and neighbor T" + n.getId());
+						LOGGER.warn("Neighbor inconsistency during full spoke collapse part2 for T" + t.getId() + " and neighbor T" + n.getId());
 					}
 				} else { // Must be a constraint
 					// Update DCEL vertex links for the boundary edge
@@ -768,7 +775,7 @@ public class KineticEventHandler {
 			kt.getQueue().needsDropping(t);
 
 		} else {
-			LOGGER.log(Level.FINEST, "--> Spoke turning into constraint in doSpokeCollapsePart2 for T{0}", t.getId());
+			LOGGER.debug("--> Spoke turning into constraint in doSpokeCollapsePart2 for T{}", t.getId());
 			// Handle infinite speed case (from C++) - check if v is infinite and both
 			// neighbors are constraints
 			boolean dropTriangle = false;
@@ -776,7 +783,7 @@ public class KineticEventHandler {
 				int i1 = mod3(edgeIdx + 1);
 				int i2 = mod3(edgeIdx + 2);
 				if (t.getNeighbor(i1) == null && t.getNeighbor(i2) == null) { // Both sides constrained?
-					LOGGER.log(Level.FINEST, "--> Dropping triangle T{0} due to infinite speed vertex and constraints", t.getId());
+					LOGGER.debug("--> Dropping triangle T{} due to infinite speed vertex and constraints", t.getId());
 					t.markDying();
 					v.stop(time, stopPos); // Stop v at the collapse point
 					// Update DCEL links across the constraints
@@ -817,7 +824,7 @@ public class KineticEventHandler {
 		WavefrontVertex va = t.getVertex(ccw(edgeIdx));
 		WavefrontVertex vb = t.getVertex(cw(edgeIdx));
 		if (va == null || vb == null) {
-			LOGGER.severe("Null vertex during doConstraintCollapsePart2 for T" + t.getId());
+			LOGGER.error("Null vertex during doConstraintCollapsePart2 for T" + t.getId());
 			return;
 		}
 
@@ -827,7 +834,7 @@ public class KineticEventHandler {
 			pos = va.getPositionAt(time); // Fallback if stop pos isn't set yet
 		}
 		if (pos == null) {
-			LOGGER.severe("Cannot determine collapse position for T" + t.getId());
+			LOGGER.error("Cannot determine collapse position for T" + t.getId());
 			return; // Cannot proceed
 		}
 
@@ -837,7 +844,7 @@ public class KineticEventHandler {
 		WavefrontEdge edgeA = va.getIncidentEdge(0); // Edge leaving va CW? Check convention
 		WavefrontEdge edgeB = vb.getIncidentEdge(1); // Edge leaving vb CCW? Check convention
 		if (edgeA == null || edgeB == null) {
-			LOGGER.severe("Cannot find incident edges for new vertex in doConstraintCollapsePart2 for T" + t.getId());
+			LOGGER.error("Cannot find incident edges for new vertex in doConstraintCollapsePart2 for T" + t.getId());
 			// This might happen if va/vb were part of a triangle collapse handled earlier
 			// Mark t for dropping and return
 			WavefrontEdge w = t.getWavefront(edgeIdx);
@@ -851,7 +858,7 @@ public class KineticEventHandler {
 		// Create the new vertex
 		WavefrontVertex v = WavefrontVertex.makeVertex(pos, time, edgeA, edgeB, false, kt.getVertices());
 		if (v == null) {
-			LOGGER.severe("Failed to create new vertex in doConstraintCollapsePart2 for T" + t.getId());
+			LOGGER.error("Failed to create new vertex in doConstraintCollapsePart2 for T" + t.getId());
 			return;
 		}
 
@@ -941,10 +948,10 @@ public class KineticEventHandler {
 						assert !n.isConstrained(nidx) : "Neighbor already constrained where constraint should be moved";
 						n.moveConstraintFrom(nidx, t, constrainedEdge); // Move constraint data
 					} else {
-						LOGGER.warning("Cannot find index of dying triangle T" + t.getId() + " in neighbor T" + n.getId() + " during moveConstraint");
+						LOGGER.warn("Cannot find index of dying triangle T" + t.getId() + " in neighbor T" + n.getId() + " during moveConstraint");
 					}
 				} else {
-					LOGGER.warning("Cannot find neighbor opposite constrained edge " + constrainedEdge + " of dying triangle T" + t.getId());
+					LOGGER.warn("Cannot find neighbor opposite constrained edge " + constrainedEdge + " of dying triangle T" + t.getId());
 				}
 			}
 		}
@@ -992,7 +999,7 @@ public class KineticEventHandler {
 		int tid = (int) t.getId(); // Assuming ID fits int
 		// Check bounds for BitSet access
 		if (tid < 0) {
-			LOGGER.warning("Invalid triangle ID for refinement check: " + tid);
+			LOGGER.warn("Invalid triangle ID for refinement check: " + tid);
 			return;
 		}
 		// Ensure BitSet is large enough (should happen in initialize or when adding
@@ -1039,7 +1046,7 @@ public class KineticEventHandler {
 
 	/** Performs initial refinement pass after triangulation setup. */
 	void refineTriangulationInitial() {
-		LOGGER.fine("Performing initial triangulation refinement...");
+		LOGGER.debug("Performing initial triangulation refinement...");
 		for (KineticTriangle t : kt.getTriangles()) {
 			if (t != null && !t.isDying() && !t.isDead()) {
 				// Put all initial triangles on the queue for checking
@@ -1047,7 +1054,7 @@ public class KineticEventHandler {
 			}
 		}
 		processCheckRefinementQueue(SurfConstants.CORE_ZERO); // Refine at time 0
-		LOGGER.fine("Initial refinement complete.");
+		LOGGER.debug("Initial refinement complete.");
 	}
 
 	static boolean refine = false;
@@ -1061,8 +1068,9 @@ public class KineticEventHandler {
 	private void refineTriangulation(KineticTriangle t, double time) {
 		if (refine) {
 			// NOTE under #ifdef REFINE_TRIANGULATION
-			if (t.isUnbounded())
+			if (t.isUnbounded()) {
 				return;
+			}
 
 			// count reflex‐or‐straight
 			int reflexCount = 0, reflexIdx = -1;
@@ -1073,19 +1081,23 @@ public class KineticEventHandler {
 					reflexCount++;
 				}
 			}
-			if (reflexCount != 1)
+			if (reflexCount != 1) {
 				return;
+			}
 
 			int edgeToFlip = reflexIdx;
-			if (t.isConstrained(edgeToFlip))
+			if (t.isConstrained(edgeToFlip)) {
 				return;
+			}
 
 			KineticTriangle n = t.getNeighbor(edgeToFlip);
-			if (n == null || n.isDying() || n.isDead() || n.isUnbounded())
+			if (n == null || n.isDying() || n.isDead() || n.isUnbounded()) {
 				return;
+			}
 			int idxInN = n.indexOfNeighbor(t);
-			if (idxInN < 0)
+			if (idxInN < 0) {
 				return;
+			}
 
 			// now port CGAL’s “straight‐corner” skips:
 			WavefrontVertex va = t.getVertex(ccw(reflexIdx));
@@ -1111,7 +1123,7 @@ public class KineticEventHandler {
 	private void doFlip(KineticTriangle t, int edgeIdx, double time, boolean allowCollinear) {
 		KineticTriangle n = t.getNeighbor(edgeIdx);
 		if (n == null || n.isDying() || n.isDead()) {
-			LOGGER.warning("Attempted to flip edge " + edgeIdx + " of T" + t.getId() + " but neighbor is null or dead.");
+			LOGGER.warn("Attempted to flip edge " + edgeIdx + " of T" + t.getId() + " but neighbor is null or dead.");
 			return;
 		}
 		doRawFlip(t, edgeIdx, time, allowCollinear);
@@ -1135,8 +1147,9 @@ public class KineticEventHandler {
 
 	private void doRawFlip(KineticTriangle t, int edgeIdx, double time, boolean allowCollinear) {
 		KineticTriangle n = t.getNeighbor(edgeIdx);
-		if (n == null)
+		if (n == null) {
 			return;
+		}
 		int nidx = n.indexOfNeighbor(t);
 
 		// fetch the four involved vertices
