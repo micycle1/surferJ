@@ -1,7 +1,7 @@
 <configuration>
 	<appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
 		<encoder>
-			<pattern>[%highlight(%5level)] %cyan(%logger{0}) - %msg%n</pattern>
+			<pattern>[%highlight(%level)] %cyan(%logger{0}) - %msg%n</pattern>
 		</encoder>
 	</appender>
 	<root level="trace">

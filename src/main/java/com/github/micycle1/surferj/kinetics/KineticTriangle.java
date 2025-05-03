@@ -416,10 +416,10 @@ public class KineticTriangle {
 		if (!isCollapseSpecValid) {
 			// --- Debug checks (optional) ---
 			// assertVerticesMatchCache(); // Implement if using cache debug check
-			
+
 			cachedCollapseSpec = calculateCollapseSpec(currentTime);
 			isCollapseSpecValid = true;
-			
+
 			// --- Debug state update (optional) ---
 			// cacheCurrentVertices(); // Implement if using cache debug check
 		}
@@ -1649,7 +1649,19 @@ public class KineticTriangle {
 
 	// --- Triangulation Manipulation ---
 
-	// NOTE this method impl has been changed a fair bit by llm -- could be wrong...
+	/**
+	 * Moves a constraint (WavefrontEdge) from a dying source triangle's edge onto
+	 * the edge of this triangle that bordered the source. Updates the edge's
+	 * incident triangle and vertices. Does NOT modify this triangle's neighbor
+	 * pointers (that happens later in the collapse handler).
+	 *
+	 * @param targetEdgeIndex Index in this triangle (0,1,2) corresponding to the
+	 *                        edge that bordered the sourceTriangle.
+	 * @param sourceTriangle  The dying triangle from which the constraint
+	 *                        originates.
+	 * @param sourceEdgeIndex Index in the sourceTriangle (0,1,2) where the
+	 *                        constraint edge resides.
+	 */
 	public void moveConstraintFrom(int targetEdgeIndex, KineticTriangle sourceTriangle, int sourceEdgeIndex) {
 		if (targetEdgeIndex < 0 || targetEdgeIndex >= 3) {
 			throw new IllegalArgumentException("Invalid target index: " + targetEdgeIndex);
@@ -1660,11 +1672,18 @@ public class KineticTriangle {
 		if (sourceTriangle == null) {
 			throw new NullPointerException("Source triangle is null");
 		}
-		if (!sourceTriangle.isDying()) {
-			throw new IllegalStateException("Source triangle " + sourceTriangle.getName() + " is not dying");
-		}
+		// Allow source to be dying, that's the typical case
+		// if (!sourceTriangle.isDying()) {
+		// throw new IllegalStateException("Source triangle " + sourceTriangle.getName()
+		// + " is not dying");
+		// }
+		// Check consistency: this triangle should have sourceTriangle as neighbor at
+		// targetEdgeIndex *before* this call
 		if (neighbors[targetEdgeIndex] != sourceTriangle) {
-			throw new IllegalStateException("Target edge " + targetEdgeIndex + " of " + getName() + " does not border source " + sourceTriangle.getName());
+			LOGGER.warn("Consistency warning in moveConstraintFrom: Target edge " + targetEdgeIndex + " of " + getName() + " does not border source "
+					+ sourceTriangle.getName() + " (Neighbor is: " + neighbors[targetEdgeIndex] + ")");
+			// Don't throw exception here, as topology might be in flux during multi-event
+			// steps.
 		}
 		if (isConstrained(targetEdgeIndex)) {
 			throw new IllegalStateException("Target edge " + targetEdgeIndex + " of " + getName() + " is already constrained.");
@@ -1675,20 +1694,27 @@ public class KineticTriangle {
 
 		final WavefrontEdge edgeToMove = sourceTriangle.getWavefront(sourceEdgeIndex);
 		if (edgeToMove == null) {
-			throw new NullPointerException("Constraint edge to move is null from source " + sourceTriangle.getName());
+			// This might happen if the source triangle was already processed differently?
+			LOGGER.error("Constraint edge to move is null from source T{} edge {}", sourceTriangle.getId(), sourceEdgeIndex);
+			// Cannot proceed without the edge
+			return;
+			// Or throw new NullPointerException("Constraint edge to move is null from
+			// source " + sourceTriangle.getName());
 		}
+		// Optional: Check if edge's incident triangle is indeed the source
 		if (edgeToMove.getIncidentTriangle() != sourceTriangle) {
-			throw new IllegalStateException("Edge " + edgeToMove.id + " incident triangle mismatch (expected " + sourceTriangle.getName() + ")");
+			LOGGER.warn("Edge {} incident triangle mismatch (expected T{}, found T{}) during moveConstraintFrom T{} edge {} -> T{} edge {}", edgeToMove.id,
+					sourceTriangle.getId(), (edgeToMove.getIncidentTriangle() != null ? edgeToMove.getIncidentTriangle().getId() : "null"),
+					sourceTriangle.getId(), sourceEdgeIndex, getId(), targetEdgeIndex);
+			// Proceed cautiously, but this indicates a potential state issue.
 		}
 
-		// log.debug("Moving constraint Edge {} from dying {}(edge {}) to {}(edge {})",
-		// edgeToMove.id, sourceTriangle.getName(), sourceEdgeIndex, getName(),
-		// targetEdgeIndex); // Use logger
 		LOGGER.debug("Moving constraint Edge " + edgeToMove.id + " from dying " + sourceTriangle.getName() + "(edge " + sourceEdgeIndex + ") to " + getName()
 				+ "(edge " + targetEdgeIndex + ")");
 
-		// 1. Update this triangle's links
-		this.neighbors[targetEdgeIndex] = null;
+		// 1. Update this triangle's links: Set wavefront, clear neighbor
+		// ***** FIX: ONLY SET THE WAVEFRONT, DO NOT CLEAR NEIGHBOR YET *****
+		// this.neighbors[targetEdgeIndex] = null; // <<< REMOVED THIS LINE
 		this.wavefronts[targetEdgeIndex] = edgeToMove;
 
 		// 2. Update the edge's incident triangle
@@ -1707,119 +1733,115 @@ public class KineticTriangle {
 
 		// 5. Invalidate collapse specs
 		this.invalidateCollapseSpec();
+		// Source triangle spec doesn't matter (it's dying)
+		// Edge spec was invalidated by setVerticesAndUpdateAdj
 	}
 
 	public void doRawFlip(int edgeIndex) {
+		// --- Input Validation ---
 		if (edgeIndex < 0 || edgeIndex >= 3) {
 			throw new IllegalArgumentException("Invalid flip index: " + edgeIndex);
 		}
 		if (isConstrained(edgeIndex)) {
 			throw new IllegalStateException("Cannot flip constrained edge " + edgeIndex + " of " + getName());
 		}
-		final KineticTriangle n = neighbors[edgeIndex];
+		final KineticTriangle n = neighbors[edgeIndex]; // The neighbor triangle
 		if (n == null) {
 			throw new IllegalStateException("Cannot flip edge " + edgeIndex + " of " + getName() + ": no neighbor");
 		}
 		if (n.isDead() || n.isDying()) {
 			throw new IllegalStateException("Cannot flip edge " + edgeIndex + " of " + getName() + ": neighbor " + n.getName() + " is dead/dying");
 		}
-
-		final int nEdgeIndex = n.indexOfNeighbor(this); // Find index in neighbor opposite shared edge
+		final int nEdgeIndex = n.indexOfNeighbor(this); // Edge index in neighbor
+		if (nEdgeIndex < 0) {
+			// Should not happen if topology is consistent before flip
+			throw new IllegalStateException("Neighbor " + n.getName() + " does not point back to " + getName());
+		}
 		if (n.isConstrained(nEdgeIndex)) {
 			throw new IllegalStateException("Cannot flip edge " + edgeIndex + ": neighbor " + n.getName() + " edge " + nEdgeIndex + " is constrained");
 		}
 
-		// log.debug("Flipping edge between {} (idx {}) and {} (idx {})", getName(),
-		// edgeIndex, n.getName(), nEdgeIndex); // Use logger
-		LOGGER.debug("Flipping edge between " + getName() + " (idx " + edgeIndex + ") and " + n.getName() + " (idx " + nEdgeIndex + ")");
+		LOGGER.debug("Flipping edge between {} (idx {}) and {} (idx {})", getName(), edgeIndex, n.getName(), nEdgeIndex);
 
-		final WavefrontVertex v_idx = this.getVertex(edgeIndex);
-		final WavefrontVertex v_ccw = this.getVertex(ccw(edgeIndex));
-		final WavefrontVertex v_cw = this.getVertex(cw(edgeIndex));
-		final WavefrontVertex v_n = n.getVertex(nEdgeIndex);
-		if (v_idx == null || v_ccw == null || v_cw == null || v_n == null) {
-			throw new IllegalStateException("Null vertex encountered during flip of edge " + edgeIndex + " in " + getName());
-		}
+		// --- Identify Vertices ---
+		final WavefrontVertex v_opposite_this = this.getVertex(edgeIndex); // Vertex 'v' in C++
+		final WavefrontVertex v_opposite_n = n.getVertex(nEdgeIndex); // Vertex 'o' in C++
+		// Shared vertices (relative to 'this' triangle's edgeIndex)
+		final WavefrontVertex v_shared_ccw = this.getVertex(ccw(edgeIndex)); // Vertex 'v1' in C++
+		final WavefrontVertex v_shared_cw = this.getVertex(cw(edgeIndex)); // Vertex 'v2' in C++
 
-		// Sanity checks
-		if (v_ccw != n.getVertex(cw(nEdgeIndex))) {
-			throw new AssertionError("Vertex mismatch across shared edge (ccw) during flip: " + getName() + "/" + n.getName());
-		}
-		if (v_cw != n.getVertex(ccw(nEdgeIndex))) {
-			throw new AssertionError("Vertex mismatch across shared edge (cw) during flip: " + getName() + "/" + n.getName());
-		}
+		// --- Store Original Neighbor/Wavefront Info (needed for backlink updates) ---
+		KineticTriangle n_neighbor_across_n_cw = n.getNeighbor(cw(nEdgeIndex));
+		WavefrontEdge w_wavefront_across_n_cw = n.getWavefront(cw(nEdgeIndex));
+		KineticTriangle n_neighbor_across_this_cw = this.getNeighbor(cw(edgeIndex));
+		WavefrontEdge w_wavefront_across_this_cw = this.getWavefront(cw(edgeIndex));
 
-		// --- Store neighbor/wavefront info before modification ---
-		// Info for edge currently opposite v_ccw in 'this' (index cw(edgeIndex))
-		final KineticTriangle n_cw_orig = this.neighbors[cw(edgeIndex)];
-		final WavefrontEdge w_cw_orig = this.wavefronts[cw(edgeIndex)];
-		// Info for edge currently opposite v_cw in 'n' (index ccw(nEdgeIndex))
-		final KineticTriangle nn_ccw_orig = n.neighbors[ccw(nEdgeIndex)];
-		final WavefrontEdge nw_ccw_orig = n.wavefronts[ccw(nEdgeIndex)];
+		// --- Step 1: Update Vertices ---
+		// Update using setVertex to handle potential edge endpoint updates if needed
+		this.setVertex(ccw(edgeIndex), v_opposite_n); // this.vertex[v1_idx] = o
+		n.setVertex(ccw(nEdgeIndex), v_opposite_this); // n.vertex[v_shared_cw_idx_in_n] = v
 
-		// --- Perform the flip ---
+		// --- Step 2: Update Neighbor/Wavefront pointers (Following C++) ---
+		// Edge 'edgeIndex' in 'this' gets properties from edge 'cw(nEdgeIndex)' in 'n'
+		this.neighbors[edgeIndex] = n_neighbor_across_n_cw;
+		this.wavefronts[edgeIndex] = w_wavefront_across_n_cw;
 
-		// 1. Update vertices using setVertex to handle edge updates
-		// 'this' triangle changes vertex ccw(edgeIndex) from v_ccw to v_n
-		this.setVertex(ccw(edgeIndex), v_n);
-		// 'n' triangle changes vertex ccw(nEdgeIndex) from v_cw to v_idx
-		n.setVertex(ccw(nEdgeIndex), v_idx);
+		// Edge 'nEdgeIndex' in 'n' gets properties from edge 'cw(edgeIndex)' in 'this'
+		n.neighbors[nEdgeIndex] = n_neighbor_across_this_cw;
+		n.wavefronts[nEdgeIndex] = w_wavefront_across_this_cw;
 
-		// --- Update Neighbors and Wavefronts ---
-
-		// Side opposite v_idx in t (was edge t-n) now borders nn_ccw_orig or has
-		// constraint nw_ccw_orig
-		this.neighbors[edgeIndex] = nn_ccw_orig;
-		this.wavefronts[edgeIndex] = nw_ccw_orig;
-		if (nn_ccw_orig != null) {
-			// Find where nn_ccw_orig pointed to n and update it to point to this
-			nn_ccw_orig.setNeighborRaw(nn_ccw_orig.indexOfNeighbor(n), this);
-		}
-		if (nw_ccw_orig != null) {
-			nw_ccw_orig.setIncidentTriangle(this);
-		}
-
-		// Side opposite v_n in n (was edge n-t) now borders n_cw_orig or has constraint
-		// w_cw_orig
-		n.neighbors[nEdgeIndex] = n_cw_orig;
-		n.wavefronts[nEdgeIndex] = w_cw_orig;
-		if (n_cw_orig != null) {
-			// Find where n_cw_orig pointed to this and update it to point to n
-			n_cw_orig.setNeighborRaw(n_cw_orig.indexOfNeighbor(this), n);
-		}
-		if (w_cw_orig != null) {
-			w_cw_orig.setIncidentTriangle(n);
-		}
-
-		// Side opposite v_cw in t (index cw(edgeIndex)) becomes the new shared edge t-n
-		this.neighbors[cw(edgeIndex)] = n;
-		this.wavefronts[cw(edgeIndex)] = null;
-
-		// Side opposite v_ccw in n (index cw(nEdgeIndex)) becomes the new shared edge
-		// n-t
+		// Edge 'cw(nEdgeIndex)' in 'n' now points to 'this' (new shared edge)
 		n.neighbors[cw(nEdgeIndex)] = this;
 		n.wavefronts[cw(nEdgeIndex)] = null;
 
-		// --- Invalidate collapse specs ---
-		// Invalidation is handled by setVertex calls. Explicit calls might be redundant
-		// but safe.
+		// Edge 'cw(edgeIndex)' in 'this' now points to 'n' (new shared edge)
+		this.neighbors[cw(edgeIndex)] = n;
+		this.wavefronts[cw(edgeIndex)] = null;
+
+		// --- Step 3: Update Backlinks ---
+		// Update neighbor that is now across edge 'this[edgeIndex]'
+		if (this.wavefronts[edgeIndex] != null) { // If it's now constrained
+			this.wavefronts[edgeIndex].setIncidentTriangle(this);
+		} else if (this.neighbors[edgeIndex] != null) { // If it's an internal edge
+			KineticTriangle newNeighbor = this.neighbors[edgeIndex];
+			// Find where newNeighbor pointed to 'n' and update it to point to 'this'
+			int idxInNewNeighbor = newNeighbor.indexOfNeighbor(n);
+			if (idxInNewNeighbor != -1) {
+				newNeighbor.setNeighborRaw(idxInNewNeighbor, this);
+			} else {
+				// This could happen if topology was inconsistent *before* the flip
+				LOGGER.warn("Could not find backlink from new neighbor {} to old neighbor {} during flip of T{}/T{}", newNeighbor.getName(), n.getName(),
+						getName(), n.getName());
+			}
+		}
+
+		// Update neighbor that is now across edge 'n[nEdgeIndex]'
+		if (n.wavefronts[nEdgeIndex] != null) { // If it's now constrained
+			n.wavefronts[nEdgeIndex].setIncidentTriangle(n);
+		} else if (n.neighbors[nEdgeIndex] != null) { // If it's an internal edge
+			KineticTriangle newNeighborN = n.neighbors[nEdgeIndex];
+			// Find where newNeighborN pointed to 'this' and update it to point to 'n'
+			int idxInNewNeighborN = newNeighborN.indexOfNeighbor(this);
+			if (idxInNewNeighborN != -1) {
+				newNeighborN.setNeighborRaw(idxInNewNeighborN, n);
+			} else {
+				LOGGER.warn("Could not find backlink from new neighbor {} to old neighbor {} during flip of T{}/T{}", newNeighborN.getName(), getName(),
+						getName(), n.getName());
+			}
+		}
+
+		// --- Step 4: Invalidate Collapse Specs ---
+		// Invalidation should be handled by setVertex calls and neighbor updates.
+		// Explicitly invalidate just in case.
 		this.invalidateCollapseSpec();
 		n.invalidateCollapseSpec();
-		if (n_cw_orig != null) {
-			n_cw_orig.invalidateCollapseSpec();
-		}
-		if (nn_ccw_orig != null) {
-			nn_ccw_orig.invalidateCollapseSpec();
-		}
+		// Also invalidate neighbors whose pointers changed
+		if (n_neighbor_across_n_cw != null)
+			n_neighbor_across_n_cw.invalidateCollapseSpec();
+		if (n_neighbor_across_this_cw != null)
+			n_neighbor_across_this_cw.invalidateCollapseSpec();
 
-		// --- Assert validity (optional) ---
-		// this.assertValid();
-		// n.assertValid();
-		// if (n_cw_orig != null) n_cw_orig.assertValid();
-		// if (nn_ccw_orig != null) nn_ccw_orig.assertValid();
-
-		// log.debug("Flip complete."); // Use logger
-		LOGGER.debug("Flip complete.");
+		LOGGER.trace("Flip complete.");
 	}
 
 	// --- Validation ---

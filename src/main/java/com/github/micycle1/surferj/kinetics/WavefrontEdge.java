@@ -9,6 +9,8 @@ import org.locationtech.jts.algorithm.Orientation;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.LineSegment;
 import org.locationtech.jts.math.Vector2D;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.github.micycle1.surferj.SurfConstants;
 import com.github.micycle1.surferj.TriangulationUtils;
@@ -17,6 +19,8 @@ import com.github.micycle1.surferj.collapse.EdgeCollapseSpec;
 import com.github.micycle1.surferj.collapse.EdgeCollapseType;
 
 public class WavefrontEdge {
+
+	private static final Logger LOGGER = LoggerFactory.getLogger(WavefrontEdge.class);
 
 	private static final AtomicLong idCounter = new AtomicLong(0);
 	public final long id;
@@ -185,7 +189,7 @@ public class WavefrontEdge {
 		if (initialVertices[index] == null) {
 			// This might happen if setInitialVertices wasn't called after assigning final
 			// vertices
-			System.err.println("Warning: Accessing unset initialVertex[" + index + "] for initial edge " + id);
+			LOGGER.warn("Accessing unset initialVertex[" + index + "] for initial edge " + id);
 			// Fallback to current vertex? Or throw? Let's throw for now.
 			throw new IllegalStateException("Initial vertex " + index + " not set for initial edge " + id);
 		}
@@ -219,38 +223,38 @@ public class WavefrontEdge {
 	 * @param v     The vertex to set. Must not be null.
 	 */
 	public void setVertexRaw(int index, WavefrontVertex v) {
-	    if (index < 0 || index > 1) {
-	        throw new IndexOutOfBoundsException("WavefrontEdge vertex index must be 0 or 1, got: " + index);
-	    }
-	    // Allow null vertex? Let's assume yes for now, caller beware.
-	    // if (v == null) {
-	    //     LOGGER.warn("Setting null vertex at index {} for edge {}", index, this.id);
-	    // }
+		if (index < 0 || index > 1) {
+			throw new IndexOutOfBoundsException("WavefrontEdge vertex index must be 0 or 1, got: " + index);
+		}
+		// Allow null vertex? Let's assume yes for now, caller beware.
+		// if (v == null) {
+		// LOGGER.warn("Setting null vertex at index {} for edge {}", index, this.id);
+		// }
 
-	    WavefrontVertex oldVertex = (index == 0) ? this.vertex0 : this.vertex1;
-	    boolean changed = (oldVertex != v);
+		WavefrontVertex oldVertex = (index == 0) ? this.vertex0 : this.vertex1;
+		boolean changed = (oldVertex != v);
 
-	    // 1. Update edge's internal pointer
-	    if (index == 0) {
-	        this.vertex0 = v;
-	    } else { // index == 1
-	        this.vertex1 = v;
-	    }
+		// 1. Update edge's internal pointer
+		if (index == 0) {
+			this.vertex0 = v;
+		} else { // index == 1
+			this.vertex1 = v;
+		}
 
-	    // 2. Update NEW vertex's back pointer (if vertex is not null)
-	    if (v != null && !v.isInfinite()) {
-	         // Index 0 of edge corresponds to vertex's side 1 (outgoing CW)
-	         // Index 1 of edge corresponds to vertex's side 0 (incoming CCW)
-	         // Make sure WavefrontVertex.setIncidentEdge handles nulls if needed
-	         v.setIncidentEdge(1 - index, this); // <<< THIS IS THE MISSING LINK
-	    }
+		// 2. Update NEW vertex's back pointer (if vertex is not null)
+		if (v != null && !v.isInfinite()) {
+			// Index 0 of edge corresponds to vertex's side 1 (outgoing CW)
+			// Index 1 of edge corresponds to vertex's side 0 (incoming CCW)
+			// Make sure WavefrontVertex.setIncidentEdge handles nulls if needed
+			v.setIncidentEdge(1 - index, this); // <<< THIS IS THE MISSING LINK
+		}
 
-	    // 3. CRITICAL: DO NOT MODIFY oldVertex's pointers TO edges here.
+		// 3. CRITICAL: DO NOT MODIFY oldVertex's pointers TO edges here.
 
-	    // 4. Invalidate spec only if a vertex actually changed
-	    if (changed) {
-	         invalidateCollapseSpec();
-	    }
+		// 4. Invalidate spec only if a vertex actually changed
+		if (changed) {
+			invalidateCollapseSpec();
+		}
 	}
 
 	/**
@@ -290,9 +294,9 @@ public class WavefrontEdge {
 				oldVertex.setIncidentEdge(vertexWavefrontIndex, null);
 			} else {
 				// This might indicate an inconsistency elsewhere
-				System.err.println("Warning: Old vertex V" + oldVertex.id + " at index " + index + " of edge " + id
-						+ " did not have correct back-pointer (expected edge " + id + ", found edge "
-						+ (oldVertex.getWavefront(vertexWavefrontIndex) != null ? oldVertex.getWavefront(vertexWavefrontIndex).id : "null") + ")");
+				LOGGER.warn("Old vertex V" + oldVertex.id + " at index " + index + " of edge " + id + " did not have correct back-pointer (expected edge " + id
+						+ ", found edge " + (oldVertex.getWavefront(vertexWavefrontIndex) != null ? oldVertex.getWavefront(vertexWavefrontIndex).id : "null")
+						+ ")");
 			}
 		}
 
@@ -324,36 +328,35 @@ public class WavefrontEdge {
 	 *           null.
 	 */
 	public void setVerticesAndUpdateAdj(WavefrontVertex v0, WavefrontVertex v1) {
-	    if (v0 == null || v1 == null) {
-	        throw new NullPointerException("Cannot set null vertices for edge " + id);
-	    }
-	    if (v0 == v1) {
-	        throw new IllegalArgumentException("Cannot set the same vertex for both ends of edge " + id);
-	    }
+		// ***** FIX 5: Correct update logic *****
+		if (v0 == null || v1 == null) {
+			throw new NullPointerException("Cannot set null vertices for edge " + id);
+		}
+		if (v0 == v1) {
+			throw new IllegalArgumentException("Cannot set the same vertex for both ends of edge " + id);
+		}
 
-	    boolean changed = (this.vertex0 != v0 || this.vertex1 != v1);
+		boolean changed = (this.vertex0 != v0 || this.vertex1 != v1);
 
-	    // Only update internal state and NEW vertices' back pointers
-	    this.vertex0 = v0;
-	    if (v0 != null && !v0.isInfinite()) {
-	        // Associate this edge with the correct side of the new vertex v0
-	        // Assuming vertex0 maps to incoming/side 1 for v0
-	        v0.setIncidentEdge(1, this);
-	    }
+		// Store new vertices internally
+		this.vertex0 = v0;
+		this.vertex1 = v1;
 
-	    this.vertex1 = v1;
-	    if (v1 != null && !v1.isInfinite()) {
-	        // Associate this edge with the correct side of the new vertex v1
-	        // Assuming vertex1 maps to outgoing/side 0 for v1
-	        v1.setIncidentEdge(0, this);
-	    }
+		// Update NEW vertices' back pointers
+		if (!v0.isInfinite()) {
+			// vertex0 (edge index 0) corresponds to vertex's side 1 (CW edge)
+			v0.setIncidentEdge(1, this);
+		}
+		if (!v1.isInfinite()) {
+			// vertex1 (edge index 1) corresponds to vertex's side 0 (CCW edge)
+			v1.setIncidentEdge(0, this);
+		}
 
-	    // *** DO NOT MODIFY OLD VERTICES ***
-	    // The logic that cleared the old vertices' pointers is removed.
+		// *** REMOVED: Logic clearing old vertex pointers ***
 
-	    if (changed) {
-	        invalidateCollapseSpec();
-	    }
+		if (changed) {
+			invalidateCollapseSpec();
+		}
 	}
 
 	public void setVerticesRaw(WavefrontVertex v0, WavefrontVertex v1) {
@@ -414,7 +417,7 @@ public class WavefrontEdge {
 		}
 		// Check if already set?
 		if (initialVertices[0] != null || initialVertices[1] != null) {
-			System.err.println("Warning: Overwriting initial vertices for edge " + id);
+			LOGGER.warn("Overwriting initial vertices for edge " + id);
 		}
 		initialVertices[0] = vertex0;
 		initialVertices[1] = vertex1;
@@ -537,7 +540,7 @@ public class WavefrontEdge {
 		if (isDead) {
 			// Handle appropriately - maybe return null or throw exception?
 			// C++ doesn't show a check, but it's good practice.
-			System.err.println("Warning: Attempting to split an already dead WavefrontEdge.");
+			LOGGER.warn("Attempting to split an already dead WavefrontEdge.");
 			// Returning null might be problematic downstream. Maybe return existing dead
 			// parts if tracked?
 			// For now, let's proceed but log heavily. If split is called, it implies an
@@ -546,26 +549,27 @@ public class WavefrontEdge {
 
 		markDead(); // Mark this edge instance as dead
 
-		// Create the first new edge half: Original vertex[0] ----> NULL (new vertex to
-		// be set by caller)
-		// It uses the same supporting line, incident triangle, skeleton face, and
-		// beveling status.
-		WavefrontEdge edgeA = new WavefrontEdge(vertex0, // Start vertex is the same as original start
-				null, // End vertex will be the new split vertex (set by caller)
-				this.supportingLine, this.incidentTriangle, // Initially assumes same incident triangle
-				this.skeletonFace, this.isBeveling);
+		// Create the first new edge half: Original vertex[0] ----> NULL
+		WavefrontEdge edgeA = new WavefrontEdge(vertex0, // Keep original v0
+				null, // v1 will be the new split vertex
+				this.supportingLine, this.incidentTriangle, this.skeletonFace, this.isBeveling);
 
-		// Create the second new edge half: NULL (new vertex to be set by caller) ---->
-		// Original vertex[1]
-		WavefrontEdge edgeB = new WavefrontEdge(null, // Start vertex will be the new split vertex (set by caller)
-				vertex1, // End vertex is the same as original end
-				this.supportingLine, this.incidentTriangle, // Initially assumes same incident triangle
-				this.skeletonFace, // Assumes same skeleton face
-				this.isBeveling);
+		// Create the second new edge half: NULL ----> Original vertex[1]
+		WavefrontEdge edgeB = new WavefrontEdge(null, // v0 will be the new split vertex
+				vertex1, // Keep original v1
+				this.supportingLine, this.incidentTriangle, this.skeletonFace, this.isBeveling);
 
 		// Add the new edges to the master list
 		wavefrontEdges.add(edgeA);
 		wavefrontEdges.add(edgeB);
+
+		// Add back-links for the retained vertices TO THE NEW edges
+		if (vertex0 != null && !vertex0.isInfinite()) {
+			vertex0.setIncidentEdge(1, edgeA); // Original v0's CW edge is now edgeA
+		}
+		if (vertex1 != null && !vertex1.isInfinite()) {
+			vertex1.setIncidentEdge(0, edgeB); // Original v1's CCW edge is now edgeB
+		}
 
 		// Return the pair of new edges
 		return Pair.of(edgeA, edgeB);
@@ -728,7 +732,7 @@ public class WavefrontEdge {
 						// Started collapsed but moving towards each other (impossible if truly
 						// collapsed?)
 						// This case is tricky. Assume ALWAYS if initially zero dist.
-						System.err.println("Warning: Edge " + id + " initially collapsed but velocities are convergent?");
+						LOGGER.warn("Edge " + id + " initially collapsed but velocities are convergent?");
 						return new EdgeCollapseSpec(EdgeCollapseType.ALWAYS, currentTime);
 					}
 				} else {
@@ -821,8 +825,7 @@ public class WavefrontEdge {
 		// one axis.
 		double collapseDistSq = collapseP0.distanceSq(collapseP1);
 		if (collapseDistSq > SurfConstants.ZERO_DIST_SQ * 100) { // Use larger tolerance?
-			System.err.println(
-					"Warning: Edge " + id + " collapse time " + time + " calculated via projection results in non-zero distance squared: " + collapseDistSq);
+			LOGGER.warn("Edge " + id + " collapse time " + time + " calculated via projection results in non-zero distance squared: " + collapseDistSq);
 			// This might happen if velocities were nearly parallel or initial orientation
 			// check was borderline.
 			// Treat as NEVER? Or proceed cautiously? Let's return NEVER.

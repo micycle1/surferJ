@@ -41,7 +41,6 @@ public class KineticEventHandler {
 
 	public void handleEvent(Event event) {
 		final double time = event.getTime();
-//		LOGGER.
 		if (Double.isNaN(time)) {
 			LOGGER.error("Attempting to handle event with NaN time: " + event);
 			return;
@@ -818,42 +817,69 @@ public class KineticEventHandler {
 	/**
 	 * Handles the second part of a constraint collapse OR a spoke collapse that
 	 * turns into a constraint. Vertex va and vb are stopped at the same point.
-	 * Creates a new vertex v, updates neighbors and triangle links.
+	 * Creates a new vertex v, updates neighbors and triangle links. This function's
+	 * job is not to decide if they stop, but to handle the topological consequences
+	 * of them having stopped at the same point.
 	 */
 	private void doConstraintCollapsePart2(KineticTriangle t, int edgeIdx, double time) {
-		if (t == null || t.isDying()) {
-			return; // Skip if already dying
+		if (t == null || t.isDying()) { // Add re-check
+			return;
 		}
 
 		WavefrontVertex va = t.getVertex(ccw(edgeIdx));
 		WavefrontVertex vb = t.getVertex(cw(edgeIdx));
 		if (va == null || vb == null) {
-			LOGGER.error("Null vertex during doConstraintCollapsePart2 for T" + t.getId());
+			LOGGER.warn("Skipping doConstraintCollapsePart2 for T" + t.getId() + ": vertices null or already stopped.");
+			// Mark t dying if not already, and drop
+			if (!t.isDying()) {
+				t.markDying();
+			}
+			if (kt.getQueue() != null) {
+				kt.getQueue().needsDropping(t);
+			}
 			return;
 		}
 
-		// Stop position should be consistent
-		Coordinate pos = va.getPosStop();
+		Coordinate pos = va.getPosStop(); // Assuming stop() was called just before this
 		if (pos == null) {
-			pos = va.getPositionAt(time); // Fallback if stop pos isn't set yet
+			pos = va.getPositionAt(time); // Fallback
 		}
+		// Further fallback if position calculation fails
 		if (pos == null) {
-			LOGGER.error("Cannot determine collapse position for T" + t.getId());
-			return; // Cannot proceed
+			LOGGER.error("Cannot determine collapse position for T" + t.getId() + " constraint collapse part 2.");
+			if (!t.isDying()) {
+				t.markDying();
+			}
+			if (kt.getQueue() != null) {
+				kt.getQueue().needsDropping(t);
+			}
+			return; // Cannot proceed without a position
+		}
+		// Ensure vb also has a consistent stop position
+		Coordinate vbPos = vb.getPosStop();
+		if (vbPos == null) {
+			vbPos = vb.getPositionAt(time);
+		}
+		if (vbPos == null || vbPos.distanceSq(pos) > SurfConstants.ZERO_DIST_SQ * 10) {
+			LOGGER.warn("Constraint collapse vertices va (V" + va.id + ") and vb (V" + vb.id + ") stopped at inconsistent positions for T" + t.getId()
+					+ ". Using va's position.");
+			// Optionally stop vb again at pos
+			// vb.stop(time, pos);
 		}
 
 		t.markDying();
 		moveConstraintsToNeighbor(t, edgeIdx); // Transfer constraints away from t
 
-		WavefrontEdge edgeA = va.getIncidentEdge(0); // Edge leaving va CW? Check convention
-		WavefrontEdge edgeB = vb.getIncidentEdge(1); // Edge leaving vb CCW? Check convention
+		WavefrontEdge edgeA = va.getIncidentEdge(0); // edge CCW to va (inherited by new vertex v)
+		WavefrontEdge edgeB = vb.getIncidentEdge(1); // edge CW to vb (inherited by new vertex v)
+
 		if (edgeA == null || edgeB == null) {
-			LOGGER.error("Cannot find incident edges for new vertex in doConstraintCollapsePart2 for T" + t.getId());
-			// This might happen if va/vb were part of a triangle collapse handled earlier
-			// Mark t for dropping and return
+			LOGGER.error(
+					"Cannot find incident edges for new vertex V_new during constraint collapse of T" + t.getId() + ". edgeA=" + edgeA + ", edgeB=" + edgeB);
+			// Mark original edge dead if it existed and drop triangle
 			WavefrontEdge w = t.getWavefront(edgeIdx);
 			if (w != null) {
-				w.markDead(); // Mark original edge dead if it existed
+				w.markDead();
 			}
 			kt.getQueue().needsDropping(t);
 			return;
@@ -863,105 +889,107 @@ public class KineticEventHandler {
 		WavefrontVertex v = WavefrontVertex.makeVertex(pos, time, edgeA, edgeB, false, kt.getVertices());
 		if (v == null) {
 			LOGGER.error("Failed to create new vertex in doConstraintCollapsePart2 for T" + t.getId());
+			// Mark original edge dead if it existed and drop triangle
+			WavefrontEdge w = t.getWavefront(edgeIdx);
+			if (w != null) {
+				w.markDead();
+			}
+			kt.getQueue().needsDropping(t);
 			return;
 		}
 
-		if (edgeA != null) {
-			// edgeA was incoming edge for va (V36).
-			// The new vertex v replaces va as the target endpoint (vertex 1) for edgeA.
-			edgeA.setVertexRaw(1, v); // Update WE48's vertex 1 to be V50
-		}
-		if (edgeB != null) {
-			// edgeB was outgoing edge for vb (V37).
-			// The new vertex v replaces vb as the source endpoint (vertex 0) for edgeB.
-			edgeB.setVertexRaw(0, v); // Update WE11's vertex 0 to be V50
-		}
+		// The WavefrontVertex constructor/makeVertex sets v's pointers TO the edges.
+		// We now need to set the edges' pointers TO v.
+		// edgeA's vertex 1 (CW end) should become v.
+		// edgeB's vertex 0 (CCW end) should become v.
+		edgeA.setVertexAndUpdateAdj(1, v); // edgeA now ends at v
+		edgeB.setVertexAndUpdateAdj(0, v); // edgeB now starts at v
+		// **************************************
 
-		// Link old vertices to the new one
-		va.setNextVertex(0, v); // Link side 0 of va
-		vb.setNextVertex(1, v); // Link side 1 of vb
+		// ***** FIX 3: NOW set incident edges and calculate geometry *****
+		v.setIncidentEdges(edgeA, edgeB); // This recalculates angle, speed, velocity
+		// ***************************************************
 
-		// Update vertex references in the fan of triangles around the collapse point
+		// Link old vertices to the new one using DCEL pointers
+		va.setNextVertex(0, v); // Link side 0 (CW) of va to new vertex v
+		vb.setNextVertex(1, v); // Link side 1 (CCW) of vb to new vertex v
+
+		// --- Update vertex references in the fan of triangles ---
 		long affectedTriangles = 0;
-		// Iterate CCW from va
-		  // --- Iterate CCW from va ---
-	    // Start iterator at the dying triangle t, positioned at va's index
-	    AroundVertexIterator iterCCW = kt.incidentFacesIterator(t, ccw(edgeIdx));
-	    iterCCW.walkCcw(); // *** STEP AWAY FIRST *** to the first living neighbor CCW
 
-	    while (!iterCCW.isEnd()) {
-	        KineticTriangle currentTri = iterCCW.t();
-	        if (currentTri == null) { // Should not happen if topology is good
-	            LOGGER.error("Iterator CCW found null triangle unexpectedly.");
-	            break;
-	        }
-	         if (currentTri.isDying()) { // Should not encounter dying triangle after first step
-	             LOGGER.warn("Iterator CCW encountered dying triangle {} after initial step.", currentTri.getId());
-	             // Decide whether to break or try to continue cautiously
-	             break; // Breaking is safer
-	         }
+		// --- Iterate CCW from va ---
+		AroundVertexIterator iterCCW = kt.incidentFacesIterator(t, ccw(edgeIdx));
+		iterCCW.walkCcw(); // ***** FIX 2: STEP AWAY FIRST *****
 
-	        // We are now on a living triangle adjacent to the new vertex v
-	        currentTri.setVertex(iterCCW.vInTIdx(), v); // Set vertex to v
-	        modified(currentTri, false); // Invalidate/notify
-	        affectedTriangles++;
+		while (!iterCCW.isEnd()) {
+			KineticTriangle currentTri = iterCCW.t();
+			if (currentTri == null) {
+				LOGGER.error("Iterator CCW found null triangle unexpectedly during constraint collapse T" + t.getId());
+				break;
+			}
+			if (currentTri.isDying()) {
+				// Check if it's the *other* collapsing triangle (neighbor across spoke)?
+				// If so, that's expected. Otherwise, it's weird.
+				LOGGER.warn("Iterator CCW encountered dying triangle T{} during constraint collapse fan update for T{}", currentTri.getId(), t.getId());
+				// Break is safer, C++ likely assumes topology is simpler here.
+				break;
+			}
 
-	        // Check before walking: can we walk further?
-	        KineticTriangle next = iterCCW.nextTriangleCcw(); // Peek ahead
-	        if (next == null) { // Stop if we hit a constraint boundary
-	            break;
-	        }
+			currentTri.setVertex(iterCCW.vInTIdx(), v); // Set vertex to v (this also updates adj edges)
+			modified(currentTri, false);
+			affectedTriangles++;
 
-	        iterCCW.walkCcw(); // Walk to the next one
-	    }
+			KineticTriangle next = iterCCW.nextTriangleCcw();
+			if (next == null) {
+				break; // Stop at boundary
+			}
+			iterCCW.walkCcw();
+		}
 
-	    // --- Iterate CW from vb ---
-	    // Start iterator at the dying triangle t, positioned at vb's index
-	    AroundVertexIterator iterCW = kt.incidentFacesIterator(t, cw(edgeIdx));
-	    iterCW.walkCw(); // *** STEP AWAY FIRST *** to the first living neighbor CW
+		// --- Iterate CW from vb ---
+		AroundVertexIterator iterCW = kt.incidentFacesIterator(t, cw(edgeIdx));
+		iterCW.walkCw(); // ***** FIX 2: STEP AWAY FIRST *****
 
-	    while (!iterCW.isEnd()) {
-	       KineticTriangle currentTri = iterCW.t();
-	        if (currentTri == null) {
-	            LOGGER.error("Iterator CW found null triangle unexpectedly.");
-	            break;
-	        }
-	         if (currentTri.isDying()) {
-	             LOGGER.warn("Iterator CW encountered dying triangle {} after initial step.", currentTri.getId());
-	             break;
-	         }
+		while (!iterCW.isEnd()) {
+			KineticTriangle currentTri = iterCW.t();
+			if (currentTri == null) {
+				LOGGER.error("Iterator CW found null triangle unexpectedly during constraint collapse T" + t.getId());
+				break;
+			}
+			if (currentTri.isDying()) {
+				LOGGER.warn("Iterator CW encountered dying triangle T{} during constraint collapse fan update for T{}", currentTri.getId(), t.getId());
+				break;
+			}
 
-	        // We are now on a living triangle adjacent to the new vertex v
-	        currentTri.setVertex(iterCW.vInTIdx(), v); // Set vertex to v
-	        modified(currentTri, false); // Invalidate/notify
-	        affectedTriangles++;
+			currentTri.setVertex(iterCW.vInTIdx(), v); // Set vertex to v
+			modified(currentTri, false);
+			affectedTriangles++;
 
-	        // Check before walking
-	        KineticTriangle next = iterCW.nextTriangleCw(); // Peek ahead
-	        if (next == null) { // Stop if we hit a constraint boundary
-	            break;
-	        }
-
-	        iterCW.walkCw(); // Walk to the next one
-	    }
+			KineticTriangle next = iterCW.nextTriangleCw();
+			if (next == null) {
+				break; // Stop at boundary
+			}
+			iterCW.walkCw();
+		}
+		// --- End Fan Update ---
 
 		// Update neighbor links (bypass t)
 		KineticTriangle na = t.getNeighbor(cw(edgeIdx)); // Neighbor opposite va
 		KineticTriangle nb = t.getNeighbor(ccw(edgeIdx)); // Neighbor opposite vb
-		if (na != null) {
+		if (na != null && !na.isDying()) { // Don't link to dying neighbor
 			int idxInNa = na.indexOfNeighbor(t);
 			if (idxInNa != -1) {
-				na.setNeighborRaw(idxInNa, nb); // Link na -> nb
+				na.setNeighborRaw(idxInNa, (nb != null && !nb.isDying()) ? nb : null); // Link na -> nb (or null)
 			}
 		}
-		if (nb != null) {
+		if (nb != null && !nb.isDying()) { // Don't link to dying neighbor
 			int idxInNb = nb.indexOfNeighbor(t);
 			if (idxInNb != -1) {
-				nb.setNeighborRaw(idxInNb, na); // Link nb -> na
+				nb.setNeighborRaw(idxInNb, (na != null && !na.isDying()) ? na : null); // Link nb -> na (or null)
 			}
 		}
 
-		// Mark original wavefront edge (if it was a constraint) dead
+		// Mark original wavefront edge (if it existed on t) dead
 		WavefrontEdge w = t.getWavefront(edgeIdx);
 		if (w != null) {
 			w.markDead();

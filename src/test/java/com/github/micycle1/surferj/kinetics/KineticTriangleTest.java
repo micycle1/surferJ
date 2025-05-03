@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -444,81 +445,103 @@ class KineticTriangleTest {
 	}
 
 	@Test
-	void testDoRawFlip() {
-		WavefrontVertex v0 = createVertex(0, 1, 0, 0);
-		WavefrontVertex v1 = createVertex(-1, 0, 0, 0);
-		WavefrontVertex v2 = createVertex(1, 0, 0, 0);
-		WavefrontVertex vN = createVertex(0, -1, 0, 0); // Opposite vertex in T2
-		WavefrontVertex v3N = createVertex(2, 1, 0, 0); // Neighbor of T1(e1)
-		WavefrontVertex v4N = createVertex(-2, 1, 0, 0); // Neighbor of T1(e2)
-		WavefrontVertex v5N = createVertex(-1, -2, 0, 0); // Neighbor of T2(e1)
-		WavefrontVertex v6N = createVertex(1, -2, 0, 0); // Neighbor of T2(e2)
+    void testDoRawFlipDiamondConfiguration() {
+        // --- Setup Vertices ---
+        // Diamond shape: v0 top, v1 left, v2 right, vN bottom
+        WavefrontVertex v0 = createVertex(0, 1, 0, 0);  // ID: 1 (example)
+        WavefrontVertex v1 = createVertex(-1, 0, 0, 0); // ID: 2
+        WavefrontVertex v2 = createVertex(1, 0, 0, 0);  // ID: 3
+        WavefrontVertex vN = createVertex(0, -1, 0, 0); // ID: 4
+        // External vertices for neighbors
+        WavefrontVertex v3N = createVertex(2, 1, 0, 0);  // ID: 5 (neighbor T3)
+        WavefrontVertex v4N = createVertex(-2, 1, 0, 0); // ID: 6 (neighbor T4)
+        WavefrontVertex v5N = createVertex(-1, -2, 0, 0);// ID: 7 (neighbor T5)
+        WavefrontVertex v6N = createVertex(1, -2, 0, 0); // ID: 8 (neighbor T6)
 
-		KineticTriangle t1 = new KineticTriangle(DEFAULT_COMPONENT, v0, v1, v2);
-		KineticTriangle t2 = new KineticTriangle(DEFAULT_COMPONENT, vN, v2, v1); // Order: vN, v2(ccw), v1(cw)
-		// Create placeholder neighbors with correct vertices for linking
-		KineticTriangle t3 = createPlaceholderTriangle(v3N, v0, v2); // Shares v0,v2 with T1(e1)
-		KineticTriangle t4 = createPlaceholderTriangle(v4N, v1, v0); // Shares v1,v0 with T1(e2)
-		KineticTriangle t5 = createPlaceholderTriangle(v5N, vN, v1); // Shares vN,v1 with T2(e1)
-		KineticTriangle t6 = createPlaceholderTriangle(v6N, v2, vN); // Shares v2,vN with T2(e2)
+        // --- Setup Triangles ---
+        // T1 uses v0, v1, v2
+        KineticTriangle t1 = new KineticTriangle(DEFAULT_COMPONENT, v0, v1, v2); // ID: 9
+        // T2 uses vN, v2, v1 (Order matters: vertex opposite edge 0 is vN)
+        KineticTriangle t2 = new KineticTriangle(DEFAULT_COMPONENT, vN, v2, v1); // ID: 10
+        // Neighbor Triangles (Placeholders, just need vertices and links)
+        KineticTriangle t3 = createPlaceholderTriangle(v3N, v0, v2); // Shares v0, v2 with T1[1]. ID: 11
+        KineticTriangle t4 = createPlaceholderTriangle(v4N, v1, v0); // Shares v1, v0 with T1[2]. ID: 12
+        KineticTriangle t5 = createPlaceholderTriangle(v5N, vN, v1); // Shares vN, v1 with T2[1]. ID: 13
+        KineticTriangle t6 = createPlaceholderTriangle(v6N, v2, vN); // Shares vN, v2 with T2[2]. ID: 14
 
-		// Initial linking
-		linkTriangles(t1, 0, t2, 0); // T1(e0) <-> T2(e0) shared edge v1-v2
-		linkTriangles(t1, 1, t3, 0); // T1(e1) <-> T3(e0) shared edge v2-v0
-		linkTriangles(t1, 2, t4, 0); // T1(e2) <-> T4(e0) shared edge v0-v1
-		linkTriangles(t2, 1, t5, 0); // T2(e1) <-> T5(e0) shared edge v1-vN
-		linkTriangles(t2, 2, t6, 0); // T2(e2) <-> T6(e0) shared edge vN-v2
+        // --- Initial Linking ---
+        // Edge indices: vertex i is opposite edge i
+        linkTriangles(t1, 0, t2, 0); // T1 edge v1-v2 (opp v0) <=> T2 edge v2-v1 (opp vN)
+        linkTriangles(t1, 1, t3, 0); // T1 edge v2-v0 (opp v1) <=> T3 edge v0-v2 (opp v3N)
+        linkTriangles(t1, 2, t4, 0); // T1 edge v0-v1 (opp v2) <=> T4 edge v1-v0 (opp v4N)
+        linkTriangles(t2, 1, t5, 0); // T2 edge v1-vN (opp v2) <=> T5 edge vN-v1 (opp v5N)
+        linkTriangles(t2, 2, t6, 0); // T2 edge vN-v2 (opp v1) <=> T6 edge v2-vN (opp v6N)
 
-		// Perform flip on edge 0 of T1
-		t1.doRawFlip(0);
+        // --- Mark specs valid initially (optional, makes testing clearer) ---
+        // t1.isCollapseSpecValid = true; // Need access or skip check
+        // t2.isCollapseSpecValid = true;
+        // t3.isCollapseSpecValid = true;
+        // t4.isCollapseSpecValid = true;
+        // t5.isCollapseSpecValid = true;
+        // t6.isCollapseSpecValid = true;
 
-		// --- Verify T1 ---
-		assertEquals(v0, t1.getVertex(0));
-		assertEquals(vN, t1.getVertex(1)); // Changed from v1
-		assertEquals(v2, t1.getVertex(2));
-		// assertEquals(t6, t1.getNeighbor(0)); // FAILS -> Should be t5
-		assertEquals(t5, t1.getNeighbor(0));
-		assertNull(t1.getWavefront(0));
-		assertEquals(t3, t1.getNeighbor(1));
-		assertNull(t1.getWavefront(1));
-		assertEquals(t2, t1.getNeighbor(2)); // New shared edge
-		assertNull(t1.getWavefront(2));
+        // --- Perform the Flip ---
+        // Flip the shared edge v1-v2, which is edge 0 in t1
+        t1.doRawFlip(0);
 
-		// --- Verify T2 ---
-		assertEquals(vN, t2.getVertex(0));
-		assertEquals(v0, t2.getVertex(1)); // Changed from v2
-		assertEquals(v1, t2.getVertex(2));
-		assertEquals(t4, t2.getNeighbor(0));
-		assertNull(t2.getWavefront(0));
-		// assertEquals(t1, t2.getNeighbor(1)); // FAILS -> Should be t5
-		assertEquals(t5, t2.getNeighbor(1));
-		assertNull(t2.getWavefront(1));
-		// assertEquals(t5, t2.getNeighbor(2)); // FAILS -> Should be t1 (New shared
-		// edge)
-		assertEquals(t1, t2.getNeighbor(2));
-		assertNull(t2.getWavefront(2));
+        // --- Assert Final State ---
 
-		// --- Verify external neighbor back pointers ---
-		// Find the index in the neighbor that points back to t1 or t2
-		// Assuming the linkTriangles helper correctly sets these indices to 0 initially
+        // --- Verify T1 (Original: v0,v1,v2 -> Flipped: v0,vN,v2) ---
+        assertEquals(v0, t1.getVertex(0), "T1 Vertex 0 incorrect after flip");
+        assertEquals(vN, t1.getVertex(1), "T1 Vertex 1 incorrect after flip (should be vN)"); // Changed
+        assertEquals(v2, t1.getVertex(2), "T1 Vertex 2 incorrect after flip");
 
-		// assertEquals(t1, t6.getNeighbor(1)); // FAILS -> t6 should point to t2 at
-		// index 0
-		assertEquals(t2, t6.getNeighbor(0));
-		// assertEquals(t1, t3.getNeighbor(1)); // FAILS -> t3 should point to t1 at
-		// index 0
-		assertEquals(t1, t3.getNeighbor(0));
-		// assertEquals(t2, t4.getNeighbor(1)); // FAILS -> t4 should point to t2 at
-		// index 0
-		assertEquals(t2, t4.getNeighbor(0));
-		// assertEquals(t2, t5.getNeighbor(1)); // FAILS -> t5 should point to t1 at
-		// index 0
-		assertEquals(t1, t5.getNeighbor(0));
+        // Verify T1 Neighbors/Wavefronts
+        // Edge 0 (vN-v2): Should border T6 (was neighbor across T2[2])
+        assertEquals(t6, t1.getNeighbor(0), "T1 Neighbor 0 incorrect (should be T6)");
+        assertNull(t1.getWavefront(0), "T1 Wavefront 0 should be null");
+        // Edge 1 (v2-v0): Should still border T3
+        assertEquals(t3, t1.getNeighbor(1), "T1 Neighbor 1 incorrect (should be T3)");
+        assertNull(t1.getWavefront(1), "T1 Wavefront 1 should be null");
+        // Edge 2 (v0-vN): New shared edge, should border T2
+        assertEquals(t2, t1.getNeighbor(2), "T1 Neighbor 2 incorrect (should be T2 - new shared)");
+        assertNull(t1.getWavefront(2), "T1 Wavefront 2 should be null");
 
-		// Invalidation checks should still be valid
-		assertFalse(t1.isCollapseSpecValid());
-		// ... rest of invalidation checks ...
-	}
+        // --- Verify T2 (Original: vN,v2,v1 -> Flipped: vN,v0,v1) ---
+        assertEquals(vN, t2.getVertex(0), "T2 Vertex 0 incorrect after flip");
+        assertEquals(v0, t2.getVertex(1), "T2 Vertex 1 incorrect after flip (should be v0)"); // Changed
+        assertEquals(v1, t2.getVertex(2), "T2 Vertex 2 incorrect after flip");
+
+        // Verify T2 Neighbors/Wavefronts
+        // Edge 0 (v0-v1): Should border T4 (was neighbor across T1[2])
+        assertEquals(t4, t2.getNeighbor(0), "T2 Neighbor 0 incorrect (should be T4)");
+        assertNull(t2.getWavefront(0), "T2 Wavefront 0 should be null");
+        // Edge 1 (v1-vN): Should still border T5
+        assertEquals(t5, t2.getNeighbor(1), "T2 Neighbor 1 incorrect (should be T5)");
+        assertNull(t2.getWavefront(1), "T2 Wavefront 1 should be null");
+        // Edge 2 (vN-v0): New shared edge, should border T1
+        assertEquals(t1, t2.getNeighbor(2), "T2 Neighbor 2 incorrect (should be T1 - new shared)");
+        assertNull(t2.getWavefront(2), "T2 Wavefront 2 should be null");
+
+        // --- Verify External Neighbor Back Pointers ---
+        // T3 still borders T1 across edge index 0 (of T3)
+        assertEquals(t1, t3.getNeighbor(0), "T3 backlink incorrect (should still be T1)");
+        // T4 now borders T2 across edge index 0 (of T4)
+        assertEquals(t2, t4.getNeighbor(0), "T4 backlink incorrect (should be T2)");
+        // T5 now borders T1 across edge index 0 (of T5) -- CORRECTION: T5 still borders T2!
+        assertEquals(t2, t5.getNeighbor(0), "T5 backlink incorrect (should still be T2)"); // <<<< CORRECTED ASSERTION
+        // T6 now borders T1 across edge index 0 (of T6)
+        assertEquals(t1, t6.getNeighbor(0), "T6 backlink incorrect (should be T1)");     // <<<< CORRECTED ASSERTION
+
+        // --- Verify Collapse Spec Invalidation ---
+        // Need access to isCollapseSpecValid or use a spy/mock if testing this detail
+         assertFalse(t1.isCollapseSpecValid(), "T1 collapse spec should be invalid");
+         assertFalse(t2.isCollapseSpecValid(), "T2 collapse spec should be invalid");
+         assertFalse(t3.isCollapseSpecValid(), "T3 collapse spec should be invalid"); // T3's neighbor (T1) changed vertex
+         assertFalse(t4.isCollapseSpecValid(), "T4 collapse spec should be invalid"); // T4's backlink changed
+         assertFalse(t5.isCollapseSpecValid(), "T5 collapse spec should be invalid"); // T5's backlink changed
+         assertFalse(t6.isCollapseSpecValid(), "T6 collapse spec should be invalid"); // T6's neighbor (T2) changed vertex
+    }
 
 	// --- Collapse Calculation Tests ---
 

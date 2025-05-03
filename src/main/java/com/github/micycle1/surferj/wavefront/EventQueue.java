@@ -127,7 +127,7 @@ public class EventQueue {
 	 */
 	public void processPendingUpdates(double now) {
 		// 1. Handle drops first (as a drop might override an update)
-		LOGGER.debug("Processing pending updates");
+		LOGGER.trace("Processing pending updates");
 		// We must iterate carefully if removing while iterating, or use a copy.
 		Set<Long> toDrop = new HashSet<>(needsDroppingSet); // Copy to avoid concurrent modification issues
 		for (long tid : toDrop) {

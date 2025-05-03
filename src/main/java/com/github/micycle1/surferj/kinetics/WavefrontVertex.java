@@ -18,7 +18,7 @@ import com.github.micycle1.surferj.wavefront.WavefrontPropagator;
 
 public class WavefrontVertex {
 
-	private static final Logger LOGGER = LoggerFactory.getLogger(WavefrontPropagator.class);
+	private static final Logger LOGGER = LoggerFactory.getLogger(WavefrontVertex.class);
 
 	private static final AtomicLong idCounter = new AtomicLong(0);
 	private static final Coordinate ORIGIN = new Coordinate(0, 0);
@@ -148,7 +148,10 @@ public class WavefrontVertex {
 
 	    // Set incident edges AND CALCULATE angle, infiniteSpeed, velocity
 	    // Make sure setIncidentEdges uses posZero for geometric velocity calculation
-	    setIncidentEdges(edge0, edge1);
+        this.edge0 = edge0;
+        this.edge1 = edge1;
+        // actually Initialize geometry to defaults, will be calculated later
+        setDefaultGeometry(); // Sets angle=COLLINEAR, infiniteSpeed=NONE, velocity=(0,0)
 
 	    // --- Initialize state correctly ---
 	    this.hasStopped = false; // Vertex just started, not stopped
@@ -686,7 +689,7 @@ public class WavefrontVertex {
 	static InfiniteSpeedType calculateInfiniteSpeedType(WavefrontEdge edge0, WavefrontEdge edge1, VertexAngle angle) {
 		if (angle == VertexAngle.COLLINEAR) {
 			// Use unit normals and weights as before
-			Vector2D normal1 = edge1.getSupportingLine().getUnitNormal(); // Requires getUnitNormal()
+			Vector2D normal1 = edge1.getSupportingLine().getUnitNormal();
 			Vector2D dir0 = edge0.getSupportingLine().getNormalDirection();
 			// Ensure unitNormal calculation is safe (handles zero length dir)
 			if (normal1 == null || dir0 == null) { // Check if normals are valid
