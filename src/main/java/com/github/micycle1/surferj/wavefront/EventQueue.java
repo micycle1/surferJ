@@ -6,6 +6,9 @@ import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Set;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.github.micycle1.surferj.kinetics.KineticTriangle;
 import com.github.micycle1.surferj.kinetics.KineticTriangulation;
 
@@ -16,6 +19,8 @@ import com.github.micycle1.surferj.kinetics.KineticTriangulation;
  * operation in PriorityQueue.
  */
 public class EventQueue {
+	
+	private static final Logger LOGGER = LoggerFactory.getLogger(EventQueue.class);
 
 	// NOTE: Using standard Java PriorityQueue + Map for lookup.
 	// C++ uses a custom heap with direct index access and fix_idx operation.
@@ -122,6 +127,7 @@ public class EventQueue {
 	 */
 	public void processPendingUpdates(double now) {
 		// 1. Handle drops first (as a drop might override an update)
+		LOGGER.debug("Processing pending updates");
 		// We must iterate carefully if removing while iterating, or use a copy.
 		Set<Long> toDrop = new HashSet<>(needsDroppingSet); // Copy to avoid concurrent modification issues
 		for (long tid : toDrop) {
@@ -130,7 +136,11 @@ public class EventQueue {
 				// Removal from PriorityQueue is O(N) if using remove(Object).
 				// If performance becomes critical, alternative heap implementations
 				// or strategies might be needed. For now, this is functionally correct.
+				LOGGER.debug("Attempting to drop {}.", itemToDrop);
 				boolean removed = queue.remove(itemToDrop);
+				if (removed) {
+					LOGGER.debug("Dropped {}.", itemToDrop);
+				}
 				// TODO Add logging/assertion if removed is false unexpectedly
 			}
 			// Ensure it's not processed in the update loop below
@@ -149,6 +159,7 @@ public class EventQueue {
 				boolean removed = queue.remove(itemToUpdate);
 				// TODO Add logging/assertion if removed is false unexpectedly
 
+				LOGGER.debug("Updating priority for {}. Old=, New={}", itemToUpdate.getEvent().getTime(), now);
 				itemToUpdate.updatePriority(now); // Recalculate event time/type
 
 				// Only re-add if the triangle is still relevant (not marked dead externally)
@@ -158,6 +169,7 @@ public class EventQueue {
 					queue.add(itemToUpdate); // Re-adds with updated priority
 				} else {
 					// If triangle became dead but wasn't explicitly dropped, remove mapping
+					LOGGER.debug("Item triangle died {}. Removing mapping.", itemToUpdate);
 					tidToItemMap.remove(tid);
 				}
 			}
@@ -175,6 +187,7 @@ public class EventQueue {
 	 */
 	public void needsUpdate(KineticTriangle t, boolean mayHaveValidCollapseSpec) {
 		long tid = t.getId();
+		LOGGER.debug("Marked {} for needing update.", t);
 		// Only add if not already marked for dropping
 		if (!needsDroppingSet.contains(tid)) {
 			needsUpdateSet.add(tid);
@@ -189,6 +202,7 @@ public class EventQueue {
 	 * @param t The triangle to drop.
 	 */
 	public void needsDropping(KineticTriangle t) {
+		LOGGER.debug("Marked {} for dropping.", t);
 		t.markDead(); // Mark the triangle state
 		long tid = t.getId();
 		needsDroppingSet.add(tid);

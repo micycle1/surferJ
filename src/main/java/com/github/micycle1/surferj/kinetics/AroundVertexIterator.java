@@ -1,6 +1,11 @@
 package com.github.micycle1.surferj.kinetics;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 public class AroundVertexIterator {
+	
+	private static final Logger LOGGER = LoggerFactory.getLogger(AroundVertexIterator.class);
 	
 	// TODO swap for TriangulationUtils approach?
 	private static final int[] CW = { 2, 0, 1 };
@@ -29,6 +34,14 @@ public class AroundVertexIterator {
 	public boolean isEnd() {
 		return t == null;
 	}
+	
+	public KineticTriangle nextTriangleCw() {
+		return nextTriangle(CW);
+	}
+	
+	public KineticTriangle nextTriangleCcw() {
+		return nextTriangle(CCW);
+	}
 
 	/** Return the neighbor across edge = direction[vInTIdx], or null. */
 	KineticTriangle nextTriangle(int[] direction) {
@@ -39,6 +52,7 @@ public class AroundVertexIterator {
 
 	/** Move one step CW (or CCW) around the vertex. */
 	private AroundVertexIterator walkDir(int[] direction) {
+		LOGGER.debug("Walking {} for {}", direction == CW  ? "CW" : "CCW",t);
 		if (t == null) {
 			// already at end
 			return this;
@@ -47,12 +61,14 @@ public class AroundVertexIterator {
 		int newVInNext = 0;
 		if (next != null) {
 			// find index of current t in next.neighbors
+			LOGGER.debug("		Next t={}", next);
 			int idxInNext = next.indexOfNeighbor(t);
 			// then apply direction[] to compute the new corner
 			newVInNext = direction[idxInNext];
 		}
 		this.t = next;
 		this.vInTIdx = newVInNext;
+		LOGGER.debug("New vInTIdx={}", this.vInTIdx);
 		return this;
 	}
 

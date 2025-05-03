@@ -81,7 +81,7 @@ public class KineticTriangulationTest {
 		Coordinate target = new Coordinate(x, y);
 		for (WavefrontVertex v : kt.getVertices()) {
 			// Use equals2D for robustness, though exact match expected here
-			if (v.initialPosition.equals2D(target, DELTA)) {
+			if (v.posStart.equals2D(target, DELTA)) {
 				return v;
 			}
 		}
@@ -278,7 +278,7 @@ public class KineticTriangulationTest {
 		for (KineticTriangle tri : kt.getTriangles()) {
 			Coordinate[] coords = new Coordinate[3];
 			for (int i = 0; i < 3; i++) {
-				coords[i] = tri.getVertex(i).initialPosition;
+				coords[i] = tri.getVertex(i).posStart;
 			}
 			Coordinate centroid = new Coordinate((coords[0].x + coords[1].x + coords[2].x) / 3.0, (coords[0].y + coords[1].y + coords[2].y) / 3.0);
 			Point centroidPoint = gf.createPoint(centroid);
@@ -431,7 +431,7 @@ public class KineticTriangulationTest {
 
 		// Expected Velocity: Needs calculation based on the two boundary edges
 		// Neighbors are (10,0) and (5,10).
-		Coordinate expectedVel = calculateExpectedCornerVelocity(v00.initialPosition, new Coordinate(10, 0), new Coordinate(5, 10));
+		Coordinate expectedVel = calculateExpectedCornerVelocity(v00.posStart, new Coordinate(10, 0), new Coordinate(5, 10));
 		// Assert velocity components (calculateExpectedCornerVelocity needs finishing
 		// or manual calc)
 		// Normal for (0,0)->(10,0) is (0,-1). Offset line y=-1.
@@ -604,7 +604,7 @@ public class KineticTriangulationTest {
 					WavefrontVertex v1 = tri.getVertex((i + 1) % 3);
 					WavefrontVertex v2 = tri.getVertex((i + 2) % 3);
 					if (!v1.isInfinite && !v2.isInfinite) {
-						CanonicalSegment internalEdge = new CanonicalSegment(v1.initialPosition, v2.initialPosition);
+						CanonicalSegment internalEdge = new CanonicalSegment(v1.posStart, v2.posStart);
 						assertFalse(inputConstraints.contains(internalEdge), "Triangle " + tri.id + " has constraint edge marked as internal: " + internalEdge);
 					}
 				}

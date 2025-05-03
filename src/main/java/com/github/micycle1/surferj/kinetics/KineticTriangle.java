@@ -77,7 +77,7 @@ public class KineticTriangle {
 	public KineticTriangle() {
 		// NOTE this constructor, not in original.
 		// required now because KineticTriangulation initalises vertices lazily.
-		this.id = ID_COUNTER.incrementAndGet();
+		this.id = ID_COUNTER.getAndIncrement();
 	}
 
 	/**
@@ -86,7 +86,7 @@ public class KineticTriangle {
 	 * @param component The component ID this triangle belongs to.
 	 */
 	public KineticTriangle(int component) {
-		this.id = ID_COUNTER.incrementAndGet();
+		this.id = ID_COUNTER.getAndIncrement();
 		this.component = component;
 	}
 
@@ -413,22 +413,22 @@ public class KineticTriangle {
 			// Explicitly handle dead case, return NEVER
 			return CollapseSpec.NEVER;
 		}
+		if (!isCollapseSpecValid) {
+			// --- Debug checks (optional) ---
+			// assertVerticesMatchCache(); // Implement if using cache debug check
+			
+			cachedCollapseSpec = calculateCollapseSpec(currentTime);
+			isCollapseSpecValid = true;
+			
+			// --- Debug state update (optional) ---
+			// cacheCurrentVertices(); // Implement if using cache debug check
+		}
 		if (isDying()) {
 			// If dying, the event might still need to be processed.
 			// If cache is valid, return it. If not, compute it.
 			// The event queue handler should ultimately decide based on isDying.
 			// log.debug("getCollapseSpec called on dying triangle {}", getName()); // Use
 			// logger
-		}
-		if (!isCollapseSpecValid) {
-			// --- Debug checks (optional) ---
-			// assertVerticesMatchCache(); // Implement if using cache debug check
-
-			cachedCollapseSpec = calculateCollapseSpec(currentTime);
-			isCollapseSpecValid = true;
-
-			// --- Debug state update (optional) ---
-			// cacheCurrentVertices(); // Implement if using cache debug check
 		}
 		// --- Debug checks (optional) ---
 		// assertVerticesMatchCache();
@@ -2029,23 +2029,5 @@ public class KineticTriangle {
 		// Mimic Release build:
 		return CollapseSpec.NEVER;
 	}
-
-	// --- Optional: Debug Helpers for Cache Validation ---
-	/*
-	 * private void cacheCurrentVertices() { if (collapseSpecComputedWithVertices ==
-	 * null) { collapseSpecComputedWithVertices = new WavefrontVertex[3]; }
-	 * System.arraycopy(vertices, 0, collapseSpecComputedWithVertices, 0, 3); }
-	 *
-	 * private void assertVerticesMatchCache() { if
-	 * (collapseSpecComputedWithVertices == null ||
-	 * collapseSpecComputedWithVertices[0] == null) { return; // Cache not set or
-	 * invalidated } for (int i=0; i<3; ++i) { if (vertices[i] !=
-	 * collapseSpecComputedWithVertices[i]) { throw new
-	 * AssertionError("Vertex mismatch for " + getName() + " index " + i +
-	 * ". Expected V" + (collapseSpecComputedWithVertices[i] != null ?
-	 * collapseSpecComputedWithVertices[i].id : "null") + ", Found V" + (vertices[i]
-	 * != null ? vertices[i].id : "null") + ". Collapse spec cache is invalid."); }
-	 * } }
-	 */
 
 }

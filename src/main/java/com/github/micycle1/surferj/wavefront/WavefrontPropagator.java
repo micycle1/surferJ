@@ -238,7 +238,7 @@ public class WavefrontPropagator {
 			this.currentComponent = event.getTriangle().getComponent();
 		}
 
-		this.eventCtr++;
+		this.eventCtr++; // 1-indexed
 		LOGGER.info("Processing Event #{} @ t={}: {}", eventCtr, String.format("%.6f", time), event);
 
 		eventHandler.handleEvent(event);

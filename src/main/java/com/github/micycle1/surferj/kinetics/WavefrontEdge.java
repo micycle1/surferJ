@@ -219,26 +219,38 @@ public class WavefrontEdge {
 	 * @param v     The vertex to set. Must not be null.
 	 */
 	public void setVertexRaw(int index, WavefrontVertex v) {
-		if (v == null) {
-			throw new NullPointerException("Cannot set null vertex for edge " + id);
-		}
-		boolean changed = false;
-		if (index == 0) {
-			if (this.vertex0 != v) {
-				this.vertex0 = v;
-				changed = true;
-			}
-		} else if (index == 1) {
-			if (this.vertex1 != v) {
-				this.vertex1 = v;
-				changed = true;
-			}
-		} else {
-			throw new IndexOutOfBoundsException("WavefrontEdge vertex index must be 0 or 1, got: " + index);
-		}
-		if (changed) {
-			invalidateCollapseSpec();
-		}
+	    if (index < 0 || index > 1) {
+	        throw new IndexOutOfBoundsException("WavefrontEdge vertex index must be 0 or 1, got: " + index);
+	    }
+	    // Allow null vertex? Let's assume yes for now, caller beware.
+	    // if (v == null) {
+	    //     LOGGER.warn("Setting null vertex at index {} for edge {}", index, this.id);
+	    // }
+
+	    WavefrontVertex oldVertex = (index == 0) ? this.vertex0 : this.vertex1;
+	    boolean changed = (oldVertex != v);
+
+	    // 1. Update edge's internal pointer
+	    if (index == 0) {
+	        this.vertex0 = v;
+	    } else { // index == 1
+	        this.vertex1 = v;
+	    }
+
+	    // 2. Update NEW vertex's back pointer (if vertex is not null)
+	    if (v != null && !v.isInfinite()) {
+	         // Index 0 of edge corresponds to vertex's side 1 (outgoing CW)
+	         // Index 1 of edge corresponds to vertex's side 0 (incoming CCW)
+	         // Make sure WavefrontVertex.setIncidentEdge handles nulls if needed
+	         v.setIncidentEdge(1 - index, this); // <<< THIS IS THE MISSING LINK
+	    }
+
+	    // 3. CRITICAL: DO NOT MODIFY oldVertex's pointers TO edges here.
+
+	    // 4. Invalidate spec only if a vertex actually changed
+	    if (changed) {
+	         invalidateCollapseSpec();
+	    }
 	}
 
 	/**
@@ -312,48 +324,36 @@ public class WavefrontEdge {
 	 *           null.
 	 */
 	public void setVerticesAndUpdateAdj(WavefrontVertex v0, WavefrontVertex v1) {
-		if (v0 == null || v1 == null) {
-			throw new NullPointerException("Cannot set null vertices for edge " + id);
-		}
-		if (v0 == v1) {
-			throw new IllegalArgumentException("Cannot set the same vertex for both ends of edge " + id);
-		}
+	    if (v0 == null || v1 == null) {
+	        throw new NullPointerException("Cannot set null vertices for edge " + id);
+	    }
+	    if (v0 == v1) {
+	        throw new IllegalArgumentException("Cannot set the same vertex for both ends of edge " + id);
+	    }
 
-		// Check if vertices actually changed to avoid unnecessary updates/invalidations
-		boolean changed = (this.vertex0 != v0 || this.vertex1 != v1);
+	    boolean changed = (this.vertex0 != v0 || this.vertex1 != v1);
 
-		// --- Update Vertex 0 ---
-		// Clear old vertex0's back pointer (if needed)
-		if (this.vertex0 != null && this.vertex0 != v0 && !this.vertex0.isInfinite()) {
-			if (this.vertex0.getWavefront(1) == this) { // vertex0 corresponds to wavefronts[1]
-				this.vertex0.setIncidentEdge(1, null);
-			}
-		}
-		// Set new vertex0
-		this.vertex0 = v0;
-		// Set new vertex0's back pointer
-		if (!v0.isInfinite()) {
-			v0.setIncidentEdge(1, this); // vertex0 corresponds to wavefronts[1]
-		}
+	    // Only update internal state and NEW vertices' back pointers
+	    this.vertex0 = v0;
+	    if (v0 != null && !v0.isInfinite()) {
+	        // Associate this edge with the correct side of the new vertex v0
+	        // Assuming vertex0 maps to incoming/side 1 for v0
+	        v0.setIncidentEdge(1, this);
+	    }
 
-		// --- Update Vertex 1 ---
-		// Clear old vertex1's back pointer (if needed)
-		if (this.vertex1 != null && this.vertex1 != v1 && !this.vertex1.isInfinite()) {
-			if (this.vertex1.getWavefront(0) == this) { // vertex1 corresponds to wavefronts[0]
-				this.vertex1.setIncidentEdge(0, null);
-			}
-		}
-		// Set new vertex1
-		this.vertex1 = v1;
-		// Set new vertex1's back pointer
-		if (!v1.isInfinite()) {
-			v1.setIncidentEdge(0, this); // vertex1 corresponds to wavefronts[0]
-		}
+	    this.vertex1 = v1;
+	    if (v1 != null && !v1.isInfinite()) {
+	        // Associate this edge with the correct side of the new vertex v1
+	        // Assuming vertex1 maps to outgoing/side 0 for v1
+	        v1.setIncidentEdge(0, this);
+	    }
 
-		// Invalidate collapse spec if vertices changed
-		if (changed) {
-			invalidateCollapseSpec();
-		}
+	    // *** DO NOT MODIFY OLD VERTICES ***
+	    // The logic that cleared the old vertices' pointers is removed.
+
+	    if (changed) {
+	        invalidateCollapseSpec();
+	    }
 	}
 
 	public void setVerticesRaw(WavefrontVertex v0, WavefrontVertex v1) {
@@ -362,8 +362,8 @@ public class WavefrontEdge {
 			Coordinate c0 = getSegment().p0;
 			Coordinate c1 = getSegment().p1;
 			// Check if vertices align with segment ends, allowing for swapped order
-			boolean match1 = (v0.initialPosition.equals2D(c0) && v1.initialPosition.equals2D(c1));
-			boolean match2 = (v0.initialPosition.equals2D(c1) && v1.initialPosition.equals2D(c0));
+			boolean match1 = (v0.posStart.equals2D(c0) && v1.posStart.equals2D(c1));
+			boolean match2 = (v0.posStart.equals2D(c1) && v1.posStart.equals2D(c0));
 			if (!match1 && !match2) {
 				throw new IllegalArgumentException("Vertices " + v0 + ", " + v1 + " do not match edge segment ends " + getSegment());
 			}

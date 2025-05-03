@@ -292,6 +292,8 @@ public class KineticTriangulation {
 				wv.recalculateGeometry(); // Calculate geometry now that all links are established
 			}
 		}
+		
+		tidxInCheckRefinement = new BitSet(triangles.size());
 
 	}
 
@@ -598,12 +600,12 @@ public class KineticTriangulation {
 				System.err.println("TRIANGLE: " + tri);
 				System.err.println("EDGE: " + wfEdge);
 				System.err.println("EDGE SEG: " + seg);
-				System.err.println("MAP V0: " + mapV0 + " (" + mapV0.initialPosition + ")");
-				System.err.println("MAP V1: " + mapV1 + " (" + mapV1.initialPosition + ")");
+				System.err.println("MAP V0: " + mapV0 + " (" + mapV0.posStart + ")");
+				System.err.println("MAP V1: " + mapV1 + " (" + mapV1.posStart + ")");
 				System.err.println("TRI V_CCW (idx " + ((edgeIndexInTri + 1) % 3) + "): " + triV_CCW + " ("
-						+ (triV_CCW != null ? triV_CCW.initialPosition : "null") + ")");
+						+ (triV_CCW != null ? triV_CCW.posStart : "null") + ")");
 				System.err.println(
-						"TRI V_CW  (idx " + ((edgeIndexInTri + 2) % 3) + "): " + triV_CW + " (" + (triV_CW != null ? triV_CW.initialPosition : "null") + ")");
+						"TRI V_CW  (idx " + ((edgeIndexInTri + 2) % 3) + "): " + triV_CW + " (" + (triV_CW != null ? triV_CW.posStart : "null") + ")");
 
 				throw new IllegalStateException("Vertex mismatch linking edge " + wfEdge.id + " to triangle " + tri.id);
 			}
@@ -636,10 +638,10 @@ public class KineticTriangulation {
 		for (WavefrontVertex v : this.vertices) {
 			if (!v.isInfinite) {
 				if (v.getIncidentEdge(0) == null) {
-					System.err.println("Warning: Vertex " + v.id + " (" + v.initialPosition + ") missing incident edge 0 (CCW) after linking.");
+					System.err.println("Warning: Vertex " + v.id + " (" + v.posStart + ") missing incident edge 0 (CCW) after linking.");
 				}
 				if (v.getIncidentEdge(1) == null) {
-					System.err.println("Warning: Vertex " + v.id + " (" + v.initialPosition + ") missing incident edge 1 (CW) after linking.");
+					System.err.println("Warning: Vertex " + v.id + " (" + v.posStart + ") missing incident edge 1 (CW) after linking.");
 				}
 			}
 		}

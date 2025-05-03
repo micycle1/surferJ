@@ -186,6 +186,9 @@ public class KineticEventHandler {
 			va.setNextVertex(1, vb, false); // Assuming side 1 is CCW direction link
 		}
 
+		LOGGER.trace("Incident edges: {}. {}", va.getIncidentEdge(0), va.getIncidentEdge(1));
+		LOGGER.trace("Incident edges: {}. {}", vb.getIncidentEdge(0), vb.getIncidentEdge(1));
+
 		doConstraintCollapsePart2(t, edgeIdx, time);
 	}
 
@@ -346,6 +349,7 @@ public class KineticEventHandler {
 	private void handleSplitOrFlipRefineEvent(Event event) {
 		int tid = (int) event.getTriangle().getId();
 		KineticTriangle t = kt.getTriangles().get(tid);
+//		t = event.getTriangle();
 
 		if (t == null || t.isDying()) {
 			return;
@@ -862,6 +866,17 @@ public class KineticEventHandler {
 			return;
 		}
 
+		if (edgeA != null) {
+			// edgeA was incoming edge for va (V36).
+			// The new vertex v replaces va as the target endpoint (vertex 1) for edgeA.
+			edgeA.setVertexRaw(1, v); // Update WE48's vertex 1 to be V50
+		}
+		if (edgeB != null) {
+			// edgeB was outgoing edge for vb (V37).
+			// The new vertex v replaces vb as the source endpoint (vertex 0) for edgeB.
+			edgeB.setVertexRaw(0, v); // Update WE11's vertex 0 to be V50
+		}
+
 		// Link old vertices to the new one
 		va.setNextVertex(0, v); // Link side 0 of va
 		vb.setNextVertex(1, v); // Link side 1 of vb
@@ -869,32 +884,66 @@ public class KineticEventHandler {
 		// Update vertex references in the fan of triangles around the collapse point
 		long affectedTriangles = 0;
 		// Iterate CCW from va
-		AroundVertexIterator iterCCW = kt.incidentFacesIterator(t, ccw(edgeIdx));
-		AroundVertexIterator end = kt.incidentFacesEnd();
-		iterCCW.walkCcw(); // Start one step away
-		while (!iterCCW.isEnd()) {
-			KineticTriangle currentTri = iterCCW.t();
-			if (currentTri == null || currentTri.isDying()) {
-				break; // Stop if we hit null or dying
-			}
-			currentTri.setVertex(iterCCW.vInTIdx(), v);
-			modified(currentTri, false);
-			affectedTriangles++;
-			iterCCW.walkCcw();
-		}
-		// Iterate CW from vb
-		AroundVertexIterator iterCW = kt.incidentFacesIterator(t, cw(edgeIdx));
-		iterCW.walkCw(); // Start one step away
-		while (!iterCW.isEnd()) {
-			KineticTriangle currentTri = iterCW.t();
-			if (currentTri == null || currentTri.isDying()) {
-				break; // Stop if we hit null or dying
-			}
-			currentTri.setVertex(iterCW.vInTIdx(), v);
-			modified(currentTri, false);
-			affectedTriangles++;
-			iterCW.walkCw();
-		}
+		  // --- Iterate CCW from va ---
+	    // Start iterator at the dying triangle t, positioned at va's index
+	    AroundVertexIterator iterCCW = kt.incidentFacesIterator(t, ccw(edgeIdx));
+	    iterCCW.walkCcw(); // *** STEP AWAY FIRST *** to the first living neighbor CCW
+
+	    while (!iterCCW.isEnd()) {
+	        KineticTriangle currentTri = iterCCW.t();
+	        if (currentTri == null) { // Should not happen if topology is good
+	            LOGGER.error("Iterator CCW found null triangle unexpectedly.");
+	            break;
+	        }
+	         if (currentTri.isDying()) { // Should not encounter dying triangle after first step
+	             LOGGER.warn("Iterator CCW encountered dying triangle {} after initial step.", currentTri.getId());
+	             // Decide whether to break or try to continue cautiously
+	             break; // Breaking is safer
+	         }
+
+	        // We are now on a living triangle adjacent to the new vertex v
+	        currentTri.setVertex(iterCCW.vInTIdx(), v); // Set vertex to v
+	        modified(currentTri, false); // Invalidate/notify
+	        affectedTriangles++;
+
+	        // Check before walking: can we walk further?
+	        KineticTriangle next = iterCCW.nextTriangleCcw(); // Peek ahead
+	        if (next == null) { // Stop if we hit a constraint boundary
+	            break;
+	        }
+
+	        iterCCW.walkCcw(); // Walk to the next one
+	    }
+
+	    // --- Iterate CW from vb ---
+	    // Start iterator at the dying triangle t, positioned at vb's index
+	    AroundVertexIterator iterCW = kt.incidentFacesIterator(t, cw(edgeIdx));
+	    iterCW.walkCw(); // *** STEP AWAY FIRST *** to the first living neighbor CW
+
+	    while (!iterCW.isEnd()) {
+	       KineticTriangle currentTri = iterCW.t();
+	        if (currentTri == null) {
+	            LOGGER.error("Iterator CW found null triangle unexpectedly.");
+	            break;
+	        }
+	         if (currentTri.isDying()) {
+	             LOGGER.warn("Iterator CW encountered dying triangle {} after initial step.", currentTri.getId());
+	             break;
+	         }
+
+	        // We are now on a living triangle adjacent to the new vertex v
+	        currentTri.setVertex(iterCW.vInTIdx(), v); // Set vertex to v
+	        modified(currentTri, false); // Invalidate/notify
+	        affectedTriangles++;
+
+	        // Check before walking
+	        KineticTriangle next = iterCW.nextTriangleCw(); // Peek ahead
+	        if (next == null) { // Stop if we hit a constraint boundary
+	            break;
+	        }
+
+	        iterCW.walkCw(); // Walk to the next one
+	    }
 
 		// Update neighbor links (bypass t)
 		KineticTriangle na = t.getNeighbor(cw(edgeIdx)); // Neighbor opposite va

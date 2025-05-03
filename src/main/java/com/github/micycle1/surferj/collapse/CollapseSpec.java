@@ -20,7 +20,7 @@ public class CollapseSpec implements Comparable<CollapseSpec> {
 	protected final KineticTriangle triangle;
 	protected final int relevantEdge; // Index (0,1,2) in 'triangle', -1 if not applicable
 	protected final double secondaryKey; // For tie-breaking, NaN if not applicable
-	protected final int component; // Component ID, used for priority comparison
+	protected final int component; // PSLG Component ID, used for priority comparison
 
 	protected boolean isValid = true; // Flag for EventQueue strategy (Java specific)
 
@@ -228,6 +228,10 @@ public class CollapseSpec implements Comparable<CollapseSpec> {
 	}
 
 	public boolean allowsRefinementTo(CollapseSpec o) {
+	    if (Math.abs(this.time - o.time) > SurfConstants.TIME_TOL) { // Use appropriate tolerance
+	         // Or throw an IllegalArgumentException / AssertionError
+	         throw new IllegalStateException("Refinement times differ! " + this.time + " vs " + o.time);
+	    }
 		if (type == CollapseType.SPLIT_OR_FLIP_REFINE) {
 			if (o.type == CollapseType.VERTEX_MOVES_OVER_SPOKE || o.type == CollapseType.SPOKE_COLLAPSE) {
 				return relevantEdge != o.relevantEdge;
@@ -324,7 +328,7 @@ public class CollapseSpec implements Comparable<CollapseSpec> {
 			sb.append(", tri=").append(triangle.getId()); // Use ID for brevity
 		}
 		if (component >= 0) { // Only print component if non-negative? Or always? C++ always prints.
-			sb.append(", comp=").append(component);
+			sb.append(", component=").append(component);
 		}
 		// Use isNaN check for time, as NEVER type might not guarantee NaN if
 		// constructed improperly

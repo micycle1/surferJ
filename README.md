@@ -12,7 +12,7 @@ The **static** structure of the kinetic triangulation at t=0, along with when ki
 
 #### TODO:
 
-The building blocks are in place so the big next step is the wavefront **propagation** itself. This entails stepping through the simulation, deciding which event to handle next and updating topology as triangles collapse. Events must be processed in their correct order.
+The building blocks are in place so the big next step is the wavefront **propagation** itself. This entails stepping through the simulation, deciding which event to handle next [DONE] and updating topology as triangles collapse. Events must be processed in their correct order. What's proving troublesome here is state management.
 
-I also might need to revist the triangulation initalisation (whcih currently comprises constrained triangles only): 
+I also might need to revist the triangulation initalisation (which currently comprises constrained triangles only): 
 > First, create a constrained triangulation of the convex hull of the input graph. Then, for every edge e on the convex hull add one unbounded triangle, that is, one triangle with e as one edge and two infinite edges going outwards. All these edges are thought to meet at infinity

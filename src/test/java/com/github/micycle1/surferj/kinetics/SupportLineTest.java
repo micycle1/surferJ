@@ -92,7 +92,7 @@ public class SupportLineTest {
 					// Check if the edge is internal
 					WavefrontVertex v1 = tri.getVertex((i + 1) % 3);
 					WavefrontVertex v2 = tri.getVertex((i + 2) % 3);
-					assertFalse(kt.getEdgeMap().containsKey(new CanonicalSegment(v1.initialPosition, v2.initialPosition)),
+					assertFalse(kt.getEdgeMap().containsKey(new CanonicalSegment(v1.posStart, v2.posStart)),
 							"Triangle " + tri.id + " has boundary edge marked as internal neighbor edge");
 				}
 			}
@@ -111,7 +111,7 @@ public class SupportLineTest {
 		assertEquals(4, kt.getWavefrontEdges().size());
 		assertEquals(4, kt.getVertices().size());
 
-		Map<Coordinate, WavefrontVertex> coordToVertex = kt.getVertices().stream().collect(Collectors.toMap(v -> v.initialPosition, v -> v));
+		Map<Coordinate, WavefrontVertex> coordToVertex = kt.getVertices().stream().collect(Collectors.toMap(v -> v.posStart, v -> v));
 
 		for (WavefrontEdge we : kt.getWavefrontEdges()) {
 			WavefrontVertex v0 = we.getVertex(0); // CCW vertex from triangle's perspective
@@ -123,8 +123,8 @@ public class SupportLineTest {
 
 			// Check consistency with segment coordinates
 			LineSegment seg = we.getSegment();
-			assertTrue((v0.initialPosition.equals2D(seg.p0) && v1.initialPosition.equals2D(seg.p1))
-					|| (v0.initialPosition.equals2D(seg.p1) && v1.initialPosition.equals2D(seg.p0)), "Edge vertices don't match segment endpoints");
+			assertTrue((v0.posStart.equals2D(seg.p0) && v1.posStart.equals2D(seg.p1))
+					|| (v0.posStart.equals2D(seg.p1) && v1.posStart.equals2D(seg.p0)), "Edge vertices don't match segment endpoints");
 
 			// Check vertex back-references
 			// v0 (CCW from tri) is END of edge 0 (CCW from vert), START of edge 1 (CW from

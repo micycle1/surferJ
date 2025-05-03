@@ -12,6 +12,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.github.micycle1.surferj.SurfConstants;
+import com.github.micycle1.surferj.collapse.Polynomial;
+import com.github.micycle1.surferj.collapse.QuadraticSolver;
 import com.github.micycle1.surferj.wavefront.WavefrontPropagator;
 
 public class WavefrontVertex {
@@ -21,8 +23,10 @@ public class WavefrontVertex {
 	private static final AtomicLong idCounter = new AtomicLong(0);
 	private static final Coordinate ORIGIN = new Coordinate(0, 0);
 	public final long id;
-	public final Coordinate initialPosition; // Corresponds to pos_zero/pos_start
+	public final Coordinate posStart; // Corresponds to pos_zero/pos_start
+	public Coordinate posZero; // Corresponds to pos_zero/pos_start  NOTE required?
 	public boolean isInfinite; // NOTE messy? with also having InfiniteSpeedType?
+	public boolean isDegenerate = false;
 
 	// Kinetic properties
 	private VertexAngle angle;
@@ -37,11 +41,17 @@ public class WavefrontVertex {
 
 	private boolean hasStopped = false;
 	private double timeStop = Double.NaN;
+	private double timeStart = 0;
 	private Coordinate posStop = null;
+	
+	private boolean isInitial = false;
 
 	// Links for DCEL structure built during propagation
 	WavefrontVertex[] nextVertex = new WavefrontVertex[2];
 	WavefrontVertex[] prevVertex = new WavefrontVertex[2];
+
+	private Polynomial px;
+	private Polynomial py;
 
 	// Placeholder for the infinite vertex
 	public static final WavefrontVertex INFINITE_VERTEX = new WavefrontVertex();
@@ -74,7 +84,7 @@ public class WavefrontVertex {
 
 	private WavefrontVertex() {
 		this.id = -1; // Special ID for infinite
-		this.initialPosition = null;
+		this.posStart = null;
 		this.isInfinite = true;
 		this.velocity = new Coordinate(0, 0);
 		this.angle = VertexAngle.COLLINEAR;
@@ -92,7 +102,7 @@ public class WavefrontVertex {
 	public WavefrontVertex(double x, double y, double vx, double vy) {
 		// NOTE constructor for tests
 		this.id = idCounter.incrementAndGet();
-		this.initialPosition = new Coordinate(x, y);
+		this.posStart = new Coordinate(x, y);
 		this.isInfinite = false;
 		this.velocity = new Coordinate(vx, vy);
 		this.angle = VertexAngle.COLLINEAR;
@@ -106,7 +116,7 @@ public class WavefrontVertex {
 	 */
 	public WavefrontVertex(Coordinate initialPosition) {
 		this.id = idCounter.incrementAndGet();
-		this.initialPosition = initialPosition;
+		this.posStart = initialPosition;
 		this.isInfinite = false;
 		this.velocity = new Coordinate(0, 0);
 		this.angle = VertexAngle.COLLINEAR;
@@ -125,28 +135,50 @@ public class WavefrontVertex {
 	 * @param edge0      Incident edge 0.
 	 * @param edge1      Incident edge 1.
 	 */
-	private WavefrontVertex(Coordinate initialPos, Coordinate stopPos, double stopTime, WavefrontEdge edge0, WavefrontEdge edge1) {
-		this.id = idCounter.incrementAndGet();
-		this.initialPosition = Objects.requireNonNull(initialPos, "Initial position cannot be null");
+	private WavefrontVertex(Coordinate posZero, Coordinate posStart, double timeStart, WavefrontEdge edge0, WavefrontEdge edge1) {
+	    this.id = idCounter.incrementAndGet();
+	    this.posZero = Objects.requireNonNull(posZero, "posZero cannot be null"); // Store pos_zero equivalent
+	    this.posStart = Objects.requireNonNull(posStart, "posStart cannot be null"); // Store pos_start equivalent
+	    this.timeStart = timeStart; // Store time_start equivalent
 
-		// Set incident edges and calculate geometry
-		// Using a private method avoids duplicating logic if other constructors exist
-		setIncidentEdges(edge0, edge1);
+	    // is_initial should be false for vertices created via makeVertex
+	    this.isInitial = false;
+//	    this.isBeveling = false; // makeVertex doesn't handle beveling directly
+	    this.isInfinite = false; // makeVertex is for finite vertices
 
-		// If stopTime is valid, set stopping info
-		if (!Double.isNaN(stopTime) && stopTime >= -SurfConstants.TIME_TOL) { // Allow near-zero time
-			this.hasStopped = true;
-			this.timeStop = Math.max(0.0, stopTime); // Clamp time
-			this.posStop = Objects.requireNonNull(stopPos, "Stop position cannot be null if stop time is valid");
-		} else {
-			// Created before time 0 or not stopped initially
-			this.hasStopped = false;
-			this.timeStop = Double.NaN;
-			this.posStop = null;
-		}
-		// Initialize links to null
-		this.nextVertex[0] = this.nextVertex[1] = null;
-		this.prevVertex[0] = this.prevVertex[1] = null;
+	    // Set incident edges AND CALCULATE angle, infiniteSpeed, velocity
+	    // Make sure setIncidentEdges uses posZero for geometric velocity calculation
+	    setIncidentEdges(edge0, edge1);
+
+	    // --- Initialize state correctly ---
+	    this.hasStopped = false; // Vertex just started, not stopped
+	    this.timeStop = Double.NaN;
+	    this.posStop = null;
+	    this.isDegenerate = false; // Cannot be degenerate at creation time unless timeStart=0 and posStart=posZero
+
+	    // --- C++ degeneracy check at creation (only relevant if timeStart == 0) ---
+	    if (Math.abs(this.timeStart) < SurfConstants.TIME_TOL && this.posStart.equals2D(this.posZero, SurfConstants.ZERO_DIST_SQ)) {
+	        LOGGER.warn("Vertex {} created degenerate (timeStart=0, posStart=posZero)", this.id);
+	        // C++ doesn't explicitly set is_degenerate_ here, it happens in stop()
+	        // but good to be aware.
+	    }
+
+	    // Initialize links
+	    this.nextVertex[0] = this.nextVertex[1] = null;
+	    this.prevVertex[0] = this.prevVertex[1] = null;
+
+	    // Calculate polynomial representations AFTER velocity is known
+	    if (this.infiniteSpeed == InfiniteSpeedType.NONE && this.velocity != null) {
+	        this.px = new Polynomial(this.velocity.getX(), this.posZero.x); // Assuming Polynomial(slope, intercept)
+	        this.py = new Polynomial(this.velocity.getY(), this.posZero.y);
+	    } else {
+	        // For infinite speed, polynomials are constant at the creation point?
+	        // Or maybe just represent initial position? C++ needs review here.
+	        // Let's make them constant at the *initial* position (posZero).
+	         this.px = new Polynomial(0, this.posZero.x);
+	         this.py = new Polynomial(0, this.posZero.y);
+	         LOGGER.warn("Vertex {} created with infinite speed {}. Polynomial representation might be simplified.", this.id, this.infiniteSpeed);
+	    }
 	}
 
 	/**
@@ -316,7 +348,7 @@ public class WavefrontVertex {
 	}
 
 	public Coordinate getInitialPosition() {
-		return initialPosition;
+		return posStart;
 	}
 
 	public boolean isInfinite() {
@@ -373,9 +405,10 @@ public class WavefrontVertex {
 	// Compute position at time t (assuming motion starts at t=0)
 	public Coordinate getPositionAt(double time) {
 		if (isInfinite || infiniteSpeed != InfiniteSpeedType.NONE) {
-			return initialPosition; // Does not move
+			return posStart; // Does not move
 		}
-		return new Coordinate(initialPosition.getX() + velocity.getX() * time, initialPosition.getY() + velocity.getY() * time);
+		// posStart.add(velocity.multiply(t))
+		return new Coordinate(posStart.getX() + velocity.getX() * time, posStart.getY() + velocity.getY() * time);
 	}
 
 	public boolean hasStopped() {
@@ -401,37 +434,86 @@ public class WavefrontVertex {
 		throw new IndexOutOfBoundsException("Index must be 0 or 1");
 	}
 
-	/** Stops the vertex's motion at a specific time and position. */
-	public void stop(double time, Coordinate position) {
-		if (hasStopped) {
-			// Allow stopping again if time and position are consistent (within tolerance)?
-			if (Math.abs(time - this.timeStop) > 1e-9 || !position.equals2D(this.posStop, 1e-9)) {
-				LOGGER.warn("Vertex " + this.id + " already stopped at " + this.timeStop + "/" + this.posStop + ", attempting to stop again at " + time + "/"
-						+ position);
-				// Optionally throw exception or just ignore? Ignoring for now.
-				return;
-			}
-		}
-		if (isInfinite) {
-			throw new IllegalStateException("Cannot stop the infinite vertex.");
-		}
-		this.timeStop = time;
-		this.posStop = position; // Should calculate based on velocity if not provided? Assume provided for now.
-		this.hasStopped = true;
-	}
+    // Existing stop method that takes position (likely okay)
+    public void stop(double time, Coordinate position) {
+        if (hasStopped) {
+            return;
+        }
+        if (isInfinite) {
+            throw new IllegalStateException("Cannot stop the infinite vertex.");
+        }
+         // Check for infinite speed - C++ uses this version ONLY for infinite speed
+         if (getInfiniteSpeed() == InfiniteSpeedType.NONE) {
+             LOGGER.warn("Vertex " + this.id + ": stop(time, position) called but vertex does not have infinite speed.");
+             // Decide how to handle: maybe call the other stop method? Or log and proceed?
+             // Let's proceed for now, assuming the caller knows best, but log it.
+         }
 
-	// Overload for calculating position (Requires velocity implementation later)
-	public void stop(double time) {
-		if (isInfinite) {
-			throw new IllegalStateException("Cannot stop the infinite vertex.");
-		}
-		// TODO: Calculate stop position based on initialPosition, velocity, and time
-		// Coordinate calculatedPos = getPositionAt(time); // Need getPositionAt with
-		// velocity
-		// stop(time, calculatedPos);
-		stop(time, this.initialPosition); // Placeholder: stops at initial position
-		LOGGER.warn("Vertex.stop(time) called without position - stopping at initialPosition. Velocity needed.");
-	}
+        this.timeStop = time;
+        this.posStop = position;
+        this.hasStopped = true;
+
+        // Check for degeneracy (C++ logic)
+        if (this.posStart != null && this.posStop != null && this.posStop.equals2D(this.posStart, SurfConstants.ZERO_DIST_SQ)) {
+             this.isDegenerate = true;
+             // Optional: Add C++ assertion check: assert timeStop == timeStart within tolerance?
+             if (Math.abs(this.timeStop - this.timeStart) > SurfConstants.TIME_TOL) {
+                  LOGGER.warn("Vertex {} degenerate stop: timeStop {} != timeStart {}", this.id, this.timeStop, this.timeStart);
+             }
+        } else {
+             this.isDegenerate = false;
+        }
+    }
+
+    public void stop(double time) {
+        if (hasStopped) {
+             // ... (existing warning/check logic - check against calculated position?) ...
+             // Recalculate intended stop position to compare with existing posStop
+             Coordinate calculatedPos = getPositionAt(time);
+             if (Math.abs(time - this.timeStop) > SurfConstants.TIME_TOL ||
+                 (this.posStop != null && calculatedPos != null && !this.posStop.equals2D(calculatedPos, SurfConstants.ZERO_DIST_SQ))) {
+                 LOGGER.warn("Vertex " + this.id + " already stopped at " + this.timeStop + "/" + this.posStop + ", attempting to stop again at " + time + " (calculated pos: " + calculatedPos + ")");
+             }
+            return;
+        }
+        if (isInfinite) {
+            throw new IllegalStateException("Cannot stop the infinite vertex.");
+        }
+        // Check for infinite speed - C++ uses this version ONLY for NON-infinite speed
+        if (getInfiniteSpeed() != InfiniteSpeedType.NONE) {
+             LOGGER.error("Vertex " + this.id + ": stop(time) called but vertex has infinite speed type " + getInfiniteSpeed() + ". Use stop(time, position).");
+             // Decide how to handle: throw exception? Or try to proceed?
+             // Throwing is safer as the state is unexpected.
+             throw new IllegalStateException("stop(time) called on vertex with infinite speed.");
+        }
+
+        this.timeStop = time;
+        // *** Calculate the stopping position ***
+        this.posStop = getPositionAt(time); // Assumes getPositionAt(time) is correct
+        this.hasStopped = true;
+
+         // Check for calculation failure
+         if (this.posStop == null) {
+             LOGGER.error("Vertex " + this.id + ": Failed to calculate stop position at time " + time);
+             this.hasStopped = false; // Revert state
+             this.timeStop = Double.NaN;
+             // Optionally throw an exception
+             throw new IllegalStateException("Failed to calculate stop position.");
+         }
+
+
+        // Check for degeneracy (C++ logic)
+        if (this.posStart != null && this.posStop.equals2D(this.posStart, SurfConstants.ZERO_DIST_SQ)) {
+             this.isDegenerate = true;
+             // Optional: Add C++ assertion check: assert timeStop == timeStart within tolerance?
+             if (Math.abs(this.timeStop - this.timeStart) > SurfConstants.TIME_TOL) {
+                  LOGGER.warn("Vertex {} degenerate stop: timeStop {} != timeStart {}", this.id, this.timeStop, this.timeStart);
+             }
+        } else {
+            this.isDegenerate = false;
+        }
+         LOGGER.debug("Vertex {} stopped via stop(time) at {} / {}", this.id, this.timeStop, this.posStop);
+    }
 
 	public void setNextVertex(int side, WavefrontVertex next) {
 		setNextVertex(side, next, true);
@@ -493,7 +575,7 @@ public class WavefrontVertex {
 				// Calculate geometric properties using helper methods
 				angle = calculateAngle(edge0, edge1); // Calculates and sets this.angle
 				infiniteSpeed = calculateInfiniteSpeedType(edge0, edge1, angle); // Calculates and sets this.infiniteSpeed (needs this.angle)
-				velocity = calculateVelocity(edge0, edge1, angle, infiniteSpeed, initialPosition);
+				velocity = calculateVelocity(edge0, edge1, angle, infiniteSpeed, posStart);
 
 			} catch (Exception e) {
 				LOGGER.error("Error during geometry recalculation for V" + id + ": " + e.getMessage());
@@ -561,7 +643,7 @@ public class WavefrontVertex {
 				return VertexAngle.COLLINEAR;
 			}
 
-			Coordinate p1 = commonVertex.initialPosition; // The common vertex
+			Coordinate p1 = commonVertex.posStart; // The common vertex
 
 			// Find p0: The "other" vertex of edge0
 			WavefrontVertex v_p0 = (edge0.getVertex(0) == commonVertex) ? edge0.getVertex(1) : edge0.getVertex(0);
@@ -569,7 +651,7 @@ public class WavefrontVertex {
 				LOGGER.warn("Could not find preceding vertex p0 for angle calculation");
 				return VertexAngle.COLLINEAR;
 			}
-			Coordinate p0 = v_p0.initialPosition;
+			Coordinate p0 = v_p0.posStart;
 
 			// Find p2: The "other" vertex of edge1
 			WavefrontVertex v_p2 = (edge1.getVertex(0) == commonVertex) ? edge1.getVertex(1) : edge1.getVertex(0);
@@ -577,7 +659,7 @@ public class WavefrontVertex {
 				LOGGER.warn("Could not find succeeding vertex p2 for angle calculation");
 				return VertexAngle.COLLINEAR;
 			}
-			Coordinate p2 = v_p2.initialPosition;
+			Coordinate p2 = v_p2.posStart;
 
 			// Calculate orientation using JTS: Orientation.index(p0, p1, p2)
 			int orientationIndex = Orientation.index(p0, p1, p2);
@@ -660,7 +742,7 @@ public class WavefrontVertex {
 		if (isInfinite) {
 			return "WV(Inf)";
 		}
-		return "WV" + id + "(" + initialPosition.getX() + "," + initialPosition.getY() + ")";
+		return "WV" + id + "(" + posStart.getX() + "," + posStart.getY() + ")";
 	}
 	// equals/hashCode based on ID for identity semantics if needed,
 	// but using object identity is often sufficient.
